@@ -48,6 +48,18 @@
                         ],
                         "N": 60000
                 },
+                "FASHION": {
+                        "input_dim": [
+                                1,
+                                28,
+                                28
+                        ],
+                        "output_dim": 10,
+                        "hidden_dim": [
+                                512
+                        ],
+                        "N": 60000
+                },
                 "TEST@HOME": {
                         "input_dim": [
                                 3,
@@ -109,8 +121,7 @@
                         "N": 12928
                 }
         },
-        "model": {
-        },
+        "model": {},
         "l0": {
                 "loss": "L0CrossEntropy",
                 "train_scheme": "L0Trainer",

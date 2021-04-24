@@ -3,6 +3,7 @@ import sys
 import time
 
 import torch
+import torch.nn.functional as F
 from torch.optim.optimizer import Optimizer
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -26,15 +27,18 @@ class DefaultTrainer:
                  loss: GeneralModel,
                  optimizer: Optimizer,
                  device,
-                 arguments: argparse.Namespace,
+                 arguments,
                  train_loader: DataLoader,
                  test_loader: DataLoader,
+                 ood_loader: DataLoader,
                  metrics: Metrics,
-                 criterion: GeneralModel
+                 criterion: GeneralModel,
+                 tester
                  ):
 
         self._test_loader = test_loader
         self._train_loader = train_loader
+        self._ood_loader = ood_loader
         self._loss_function = loss
         self._model = model
         self._arguments = arguments
@@ -42,21 +46,23 @@ class DefaultTrainer:
         self._device = device
         self._global_steps = 0
         self.out = metrics.log_line
-        DATA_MANAGER.set_date_stamp(addition=arguments.run_name)
+        DATA_MANAGER.set_date_stamp(addition=arguments['run_name'])
         self._writer = SummaryWriter(os.path.join(DATA_MANAGER.directory, RESULTS_DIR, DATA_MANAGER.stamp, SUMMARY_DIR))
         self._metrics: Metrics = metrics
         self._metrics.init_training(self._writer)
         self._acc_buffer = []
         self._loss_buffer = []
+        self._entropy_buffer = []
         self._elapsed_buffer = []
         self._criterion = criterion
+        self._tester = tester
 
         self.ts = None
 
         batch = next(iter(self._test_loader))
         self.saliency = Saliency(model, device, batch[0][:8])
         self._metrics.write_arguments(arguments)
-        self._flopcounter = FLOPCounter(model, batch[0][:8], self._arguments.batch_size, device=device)
+        self._flopcounter = FLOPCounter(model, batch[0][:8], self._arguments['batch_size'], device=device)
         self._metrics.model_to_tensorboard(model, timestep=-1)
 
     def _batch_iteration(self,
@@ -80,6 +86,10 @@ class DefaultTrainer:
         # forward pass
         accuracy, loss, out = self._forward_pass(x, y, train=train)
 
+        # compute entropy
+        prob = F.softmax(out, dim=1)
+        entropy = -torch.sum(prob * torch.log(prob)) / x.shape[0]
+
         # backward pass
         if train:
             self._backward_pass(loss)
@@ -93,10 +103,10 @@ class DefaultTrainer:
             time = 0
 
         # free memory
-        for tens in [out, y, x, loss]:
+        for tens in [out, y, x, loss, entropy]:
             tens.detach()
 
-        return accuracy, loss.item(), time
+        return accuracy, loss.item(), time, entropy.detach().cpu()
 
     def _forward_pass(self,
                       x: torch.Tensor,
@@ -124,9 +134,9 @@ class DefaultTrainer:
         """ implementation of a backward pass """
 
         loss.backward()
-        self._model.insert_noise_for_gradient(self._arguments.grad_noise)
-        if self._arguments.grad_clip > 0:
-            torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._arguments.grad_clip)
+        self._model.insert_noise_for_gradient(self._arguments['grad_noise'])
+        if self._arguments['grad_clip'] > 0:
+            torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._arguments['grad_clip'])
         self._optimizer.step()
         if self._model.is_maskable:
             self._model.apply_weight_mask()
@@ -137,6 +147,7 @@ class DefaultTrainer:
         self.out("\n")
 
         self._acc_buffer, self._loss_buffer = self._metrics.update_epoch()
+        self._entropy_buffer = []
 
         for batch_num, batch in enumerate(self._train_loader):
             self.out(f"\rTraining... {batch_num}/{len(self._train_loader)}", end='')
@@ -144,7 +155,7 @@ class DefaultTrainer:
             if self._model.is_tracking_weights:
                 self._model.save_prev_weights()
 
-            acc, loss, elapsed = self._batch_iteration(*batch, self._model.training)
+            acc, loss, elapsed, entropy = self._batch_iteration(*batch, self._model.training)
 
             if self._model.is_tracking_weights:
                 self._model.update_tracked_weights(self._metrics.batch_train)
@@ -152,6 +163,7 @@ class DefaultTrainer:
             self._acc_buffer.append(acc)
             self._loss_buffer.append(loss)
             self._elapsed_buffer.append(elapsed)
+            self._entropy_buffer.append(entropy)
 
             self._log(batch_num)
 
@@ -162,17 +174,18 @@ class DefaultTrainer:
     def _log(self, batch_num: int):
         """ logs to terminal and tensorboard if the time is right"""
 
-        if (batch_num % self._arguments.eval_freq) == 0:
+        if (batch_num % self._arguments['eval_freq']) == 0:
             # validate on test and train set
-            train_acc, train_loss = np.mean(self._acc_buffer), np.mean(self._loss_buffer)
-            test_acc, test_loss, test_elapsed = self.validate()
+            self.train_acc, train_loss, self.train_entropy = np.mean(self._acc_buffer), np.mean(self._loss_buffer), np.mean(self._entropy_buffer)
+            self.test_acc, test_loss, test_elapsed, self.test_entropy, self.ood_entropy, self.epsilons, self.success_rates = self.validate()
             self._elapsed_buffer += test_elapsed
 
             # log metrics
-            self._add_metrics(test_acc, test_loss, train_acc, train_loss)
+            self._add_metrics(self.test_acc, test_loss, self.train_acc, train_loss, self.train_entropy, self.test_entropy, self.ood_entropy, self.epsilons, 
+                                self.success_rates)
 
             # reset for next log
-            self._acc_buffer, self._loss_buffer, self._elapsed_buffer = [], [], []
+            self._acc_buffer, self._loss_buffer, self._elapsed_buffer, self._entropy_buffer = [], [], [], []
 
             # print to terminal
             self.out(self._metrics.printable_last)
@@ -184,37 +197,51 @@ class DefaultTrainer:
 
         # init test mode
         self._model.eval()
-        cum_acc, cum_loss, cum_elapsed = [], [], []
+        cum_acc, cum_loss, cum_elapsed, cum_entropy, ood_cum_entropy = [], [], [], [], []
 
         with torch.no_grad():
             for batch_num, batch in enumerate(self._test_loader):
-                acc, loss, elapsed = self._batch_iteration(*batch, self._model.training)
+                acc, loss, elapsed, entropy = self._batch_iteration(*batch, self._model.training)
                 cum_acc.append(acc)
                 cum_loss.append(loss),
                 cum_elapsed.append(elapsed)
+                cum_entropy.append(entropy)
                 self.out(f"\rEvaluating... {batch_num}/{len(self._test_loader)}", end='')
         self.out("\n")
+
+        # validate on OOD data
+        with torch.no_grad():
+            for batch_num, batch in enumerate(self._ood_loader):
+                _, _, _, entropy = self._batch_iteration(*batch, self._model.training)
+                ood_cum_entropy.append(entropy)
+
+        # validate on adversarial attacks
+        epsilons, success_rates = self._tester.evaluate(epsilons=self._arguments['epsilons'], curr_model=self._model)
 
         # put back into train mode
         self._model.train()
 
-        return float(np.mean(cum_acc)), float(np.mean(cum_loss)), cum_elapsed
+        return float(np.mean(cum_acc)), float(np.mean(cum_loss)), cum_elapsed, float(np.mean(cum_entropy)), float(np.mean(ood_cum_entropy)), epsilons, success_rates
 
-    def _add_metrics(self, test_acc, test_loss, train_acc, train_loss):
+    def _add_metrics(self, test_acc, test_loss, train_acc, train_loss, train_entropy, test_entropy, ood_entropy, epsilons, success_rates):
         """
         save metrics
         """
 
-        sparsity = self._model.pruned_percentage
-        spasity_index = 2 * ((sparsity * test_acc) / (1e-8 + sparsity + test_acc))
+        self.sparsity = self._model.pruned_percentage
+        spasity_index = 2 * ((self.sparsity * test_acc) / (1e-8 + self.sparsity + test_acc))
 
         flops_per_sample, total_seen = self._flopcounter.count_flops(self._metrics.batch_train)
 
         self._metrics.add(train_acc, key="acc/train")
         self._metrics.add(train_loss, key="loss/train")
+        self._metrics.add(train_entropy, key="entropy/train")
         self._metrics.add(test_loss, key="loss/test")
         self._metrics.add(test_acc, key="acc/test")
-        self._metrics.add(sparsity, key="sparse/weight")
+        self._metrics.add(test_entropy, key="entropy/test")
+        self._metrics.add(success_rates[0], key=f"adv_success_rate_{epsilons[0]}/test")
+        self._metrics.add(ood_entropy, key="entropy/ood")
+        self._metrics.add(self.sparsity, key="sparse/weight")
         self._metrics.add(self._model.structural_sparsity, key="sparse/node")
         self._metrics.add(spasity_index, key="sparse/hm")
         self._metrics.add(np.log(self._model.compressed_size), key="sparse/log_disk_size")
@@ -245,30 +272,30 @@ class DefaultTrainer:
                 f"{PRINTCOLOR_BOLD}Started training{PRINTCOLOR_END}"
             )
 
-            if self._arguments.skip_first_plot:
+            if self._arguments['skip_first_plot']:
                 self._metrics.handle_weight_plotting(0, trainer_ns=self)
 
             # if snip we prune before training
-            if self._arguments.prune_criterion in SINGLE_SHOT:
-                self._criterion.prune(self._arguments.pruning_limit,
+            if self._arguments['prune_criterion'] in SINGLE_SHOT:
+                self._criterion.prune(self._arguments['pruning_limit'],
                                       train_loader=self._train_loader,
                                       manager=DATA_MANAGER)
-                if self._arguments.prune_criterion in STRUCTURED_SINGLE_SHOT:
-                    self._optimizer = find_right_model(OPTIMS, self._arguments.optimizer,
+                if self._arguments['prune_criterion'] in STRUCTURED_SINGLE_SHOT:
+                    self._optimizer = find_right_model(OPTIMS, self._arguments['optimizer'],
                                                        params=self._model.parameters(),
-                                                       lr=self._arguments.learning_rate,
-                                                       weight_decay=self._arguments.l2_reg)
+                                                       lr=self._arguments['learning_rate'],
+                                                       weight_decay=self._arguments['l2_reg'])
                     self._metrics.model_to_tensorboard(self._model, timestep=epoch)
 
             # do training
-            for epoch in range(epoch, self._arguments.epochs + epoch):
+            for epoch in range(epoch, self._arguments['epochs'] + epoch):
                 self.out(f"\n\n{PRINTCOLOR_BOLD}EPOCH {epoch} {PRINTCOLOR_END} \n\n")
 
                 # do epoch
                 self._epoch_iteration()
 
                 # plotting
-                if (epoch % self._arguments.plot_weights_freq) == 0 and self._arguments.plot_weights_freq > 0:
+                if (epoch % self._arguments['plot_weights_freq']) == 0 and self._arguments['plot_weights_freq'] > 0:
                     self._metrics.handle_weight_plotting(epoch, trainer_ns=self)
 
                 # do all related to pruning
@@ -277,7 +304,7 @@ class DefaultTrainer:
                 # save what needs to be saved
                 self._handle_backing_up(epoch)
 
-            if self._arguments.skip_first_plot:
+            if self._arguments['skip_first_plot']:
                 self._metrics.handle_weight_plotting(epoch + 1, trainer_ns=self)
 
             # example last save
@@ -302,7 +329,7 @@ class DefaultTrainer:
         self._writer.close()
 
     def _handle_backing_up(self, epoch):
-        if (epoch % self._arguments.save_freq) == 0 and epoch > 0:
+        if (epoch % self._arguments['save_freq']) == 0 and epoch > 0:
             self.out("\nSAVING...\n")
             save_models(
                 [self._model, self._metrics],
@@ -319,16 +346,16 @@ class DefaultTrainer:
             if self._is_not_finished_pruning():
                 self.out("\nPRUNING...\n")
                 self._criterion.prune(
-                    percentage=self._arguments.pruning_rate,
+                    percentage=self._arguments['pruning_rate'],
                     train_loader=self._train_loader,
                     manager=DATA_MANAGER
                 )
-                if self._arguments.prune_criterion in DURING_TRAINING:
+                if self._arguments['prune_criterion'] in DURING_TRAINING:
                     self._optimizer = find_right_model(
-                        OPTIMS, self._arguments.optimizer,
+                        OPTIMS, self._arguments['optimizer'],
                         params=self._model.parameters(),
-                        lr=self._arguments.learning_rate,
-                        weight_decay=self._arguments.l2_reg
+                        lr=self._arguments['learning_rate'],
+                        weight_decay=self._arguments['l2_reg']
                     )
                     self._metrics.model_to_tensorboard(self._model, timestep=epoch)
                 if self._model.is_rewindable:
@@ -336,19 +363,19 @@ class DefaultTrainer:
                     self._model.do_rewind()
             if self._model.is_growable:
                 self.out("growing too...\n")
-                self._criterion.grow(self._arguments.growing_rate)
+                self._criterion.grow(self._arguments['growing_rate'])
 
         if self._is_checkpoint_time(epoch):
             self.out(f"\nCreating weights checkpoint at epoch {epoch}\n")
             self._model.save_rewind_weights()
 
     def _is_not_finished_pruning(self):
-        return self._arguments.pruning_limit > self._model.pruned_percentage \
+        return self._arguments['pruning_limit'] > self._model.pruned_percentage \
                or \
                (
-                       self._arguments.prune_criterion in DURING_TRAINING
+                       self._arguments['prune_criterion'] in DURING_TRAINING
                        and
-                       self._arguments.pruning_limit > self._model.structural_sparsity
+                       self._arguments['pruning_limit'] > self._model.structural_sparsity
                )
 
     @staticmethod
@@ -358,26 +385,26 @@ class DefaultTrainer:
         return correct / output.shape[0]
 
     def _is_checkpoint_time(self, epoch: int):
-        return epoch == self._arguments.rewind_to and self._model.is_rewindable
+        return epoch == self._arguments['rewind_to'] and self._model.is_rewindable
 
     def _is_pruning_time(self, epoch: int):
-        if self._arguments.prune_criterion == "EmptyCrit":
+        if self._arguments['prune_criterion'] == "EmptyCrit":
             return False
-        epoch -= self._arguments.prune_delay
-        return (epoch % self._arguments.prune_freq) == 0 and \
+        epoch -= self._arguments['prune_delay']
+        return (epoch % self._arguments['prune_freq']) == 0 and \
                epoch > 0 and \
                self._model.is_maskable and \
-               self._arguments.prune_criterion not in SINGLE_SHOT
+               self._arguments['prune_criterion'] not in SINGLE_SHOT
 
     def _check_exit_conditions_epoch_iteration(self, patience=1):
 
         time_passed = datetime.now() - DATA_MANAGER.actual_date
         # check if runtime is expired
-        if (time_passed.total_seconds() > (self._arguments.max_training_minutes * 60)) \
+        if (time_passed.total_seconds() > (self._arguments['max_training_minutes'] * 60)) \
                 and \
-                self._arguments.max_training_minutes > 0:
+                self._arguments['max_training_minutes'] > 0:
             raise KeyboardInterrupt(
-                f"Process killed because {self._arguments.max_training_minutes} minutes passed "
+                f"Process killed because {self._arguments['max_training_minutes']} minutes passed "
                 f"since {DATA_MANAGER.actual_date}. Time now is {datetime.now()}")
         if patience == 0:
             raise NotImplementedError("feature to implement",

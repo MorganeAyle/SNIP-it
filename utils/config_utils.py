@@ -14,7 +14,7 @@ Handles loading config and autoconfig
 """
 
 def configure_seeds(arguments, device):
-    seed = arguments.seed
+    seed = arguments['seed']
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
@@ -23,7 +23,7 @@ def configure_seeds(arguments, device):
 
 
 def configure_device(arguments):
-    device = arguments.device
+    device = arguments['device']
     assert "cpu" in device or torch.cuda.is_available(), f"DEVICE {device} UNAVAILABLE"
     return torch.device(device)
 
@@ -147,21 +147,24 @@ def autoconfig(config):
     print("setting autoconfig")
     temp_loader = DataManager(os.path.join(".", "utils"))
     auto_configuration = temp_loader.load_json("autoconfig")
-    if config.data_set in auto_configuration["dataset"]:
-        for key, value in auto_configuration["dataset"][config.data_set].items():
+    if config['data_set'] in auto_configuration["dataset"]:
+        for key, value in auto_configuration["dataset"][config['data_set']].items():
             setattr(config, key, value)
-    if config.model in auto_configuration["model"]:
-        for key, value in auto_configuration["model"][config.model].items():
+    if config['model'] in auto_configuration["model"]:
+        for key, value in auto_configuration["model"][config['model']].items():
             setattr(config, key, value)
-    if config.l0:
+    if config['l0']:
         for key, value in auto_configuration["l0"].items():
+            # setattr(config, key, value)
+            config['bla'] = value
+            print(config[key])
+    if config['prune_criterion'] in auto_configuration:
+        for key, value in auto_configuration[config['prune_criterion']].items():
             setattr(config, key, value)
-    if config.prune_criterion in auto_configuration:
-        for key, value in auto_configuration[config.prune_criterion].items():
-            setattr(config, key, value)
-    if config.hoyer_square:
+    if config['hoyer_square']:
         for key, value in auto_configuration["hoyer_square"].items():
             setattr(config, key, value)
-    if config.group_hoyer_square:
+    if config['group_hoyer_square']:
         for key, value in auto_configuration["group_hoyer_square"].items():
             setattr(config, key, value)
+    return config

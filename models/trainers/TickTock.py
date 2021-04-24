@@ -42,11 +42,11 @@ class TickTock(DefaultTrainer):
                          *args):
         """ implementation of an epoch """
 
-        self._optimizer_gates = find_right_model(OPTIMS, self._arguments.optimizer,
+        self._optimizer_gates = find_right_model(OPTIMS, self._arguments['optimizer'],
                                                  params=[param for name, param in self._model.named_parameters() if
                                                          "gate" in name],
-                                                 lr=self._arguments.learning_rate,
-                                                 weight_decay=self._arguments.l2_reg)
+                                                 lr=self._arguments['learning_rate'],
+                                                 weight_decay=self._arguments['l2_reg'])
 
         at_ft, at_ticks, at_tocks = self.get_state()
 
@@ -69,7 +69,7 @@ class TickTock(DefaultTrainer):
     def get_state(self):
         at_ticks = self.ticks_done < 10 and self.tocks_done == 0
         at_tocks = self.ticks_done == 10 and self.tocks_done < 10
-        at_ft = self._arguments.pruning_limit <= self._model.structural_sparsity
+        at_ft = self._arguments['pruning_limit'] <= self._model.structural_sparsity
         return at_ft, at_ticks, at_tocks
 
     def _is_pruning_time(self, epoch):
@@ -80,9 +80,9 @@ class TickTock(DefaultTrainer):
         """ implementation of a backward pass """
 
         loss.backward()
-        self._model.insert_noise_for_gradient(self._arguments.grad_noise)
-        if self._arguments.grad_clip > 0:
-            torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._arguments.grad_clip)
+        self._model.insert_noise_for_gradient(self._arguments['grad_noise'])
+        if self._arguments['grad_clip'] > 0:
+            torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._arguments['grad_clip'])
         at_ft, at_ticks, at_tocks = self.get_state()
         opt = self._optimizer_gates if at_ticks else self._optimizer
         opt.step()
@@ -100,16 +100,16 @@ class TickTock(DefaultTrainer):
                     parent = parent._modules[left]
                 parent._modules[last_name] = new_module
 
-        self._optimizer = find_right_model(OPTIMS, self._arguments.optimizer,
+        self._optimizer = find_right_model(OPTIMS, self._arguments['optimizer'],
                                            params=[param for name, param in self._model.named_parameters() if
                                                    "gate" not in name],
-                                           lr=self._arguments.learning_rate,
-                                           weight_decay=self._arguments.l2_reg)
+                                           lr=self._argument['learning_rate'],
+                                           weight_decay=self._arguments['l2_reg'])
 
-        self._optimizer_gates = find_right_model(OPTIMS, self._arguments.optimizer,
+        self._optimizer_gates = find_right_model(OPTIMS, self._arguments['optimizer'],
                                                  params=[param for name, param in self._model.named_parameters() if
                                                          "gate" in name],
-                                                 lr=self._arguments.learning_rate,
-                                                 weight_decay=self._arguments.l2_reg)
+                                                 lr=self._arguments['learning_rate'],
+                                                 weight_decay=self._arguments['l2_reg'])
 
         super().train()

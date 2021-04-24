@@ -43,6 +43,8 @@ def _read_all_class_names():
     models[DATASETS]["IMAGEWOOF"] = get_imagewoof_loaders
     models[DATASETS]["MNIST"] = get_mnist_loaders
     models[DATASETS]["OMNIGLOT"] = get_omniglot_loaders
+    models[DATASETS]["FASHION"] = get_fashionmnist_loaders
+    models[DATASETS]["GAUSSIAN"] = get_gaussian_noise_loaders
 
 
 def find_right_model(type: str, name: str, **kwargs):
