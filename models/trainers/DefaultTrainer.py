@@ -88,7 +88,7 @@ class DefaultTrainer:
 
         # compute entropy
         prob = F.softmax(out, dim=1)
-        entropy = -torch.sum(prob * torch.log(prob)) / x.shape[0]
+        entropy = -torch.sum(prob * torch.log(prob + 1e-8)) / x.shape[0]
 
         # backward pass
         if train:

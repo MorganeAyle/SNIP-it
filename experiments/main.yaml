@@ -52,14 +52,14 @@ fixed:
     model: LeNet5  # ResNet not supported with structured
     data_set: MNIST
     ood_data_set: FASHION
-    prune_criterion: SNIPit  # options: SNIP, SNIPit, SNIPitDuring, UnstructuredRandom, GRASP, HoyerSquare, IMP, // SNAPit, StructuredRandom, GateDecorators, EfficientConvNets, GroupHoyerSquare
+    prune_criterion: SNAPit  # options: SNIP, SNIPit, SNIPitDuring, UnstructuredRandom, GRASP, HoyerSquare, IMP, // SNAPit, StructuredRandom, GateDecorators, EfficientConvNets, GroupHoyerSquare
     train_scheme: DefaultTrainer  # default: DefaultTrainer
     test_scheme: AdversarialEvaluation  # only supported on unstructured?
     attack: FGSM
     epsilons: [0.25]
 
     device: cuda
-    run_name: ""
+    run_name: "_snapit_0.9"
 
     checkpoint_name: None
     checkpoint_model: None
@@ -73,7 +73,7 @@ fixed:
     track_weights: 0  # "keep statistics on the weights through training
     disable_masking: 1  # disable the ability to prune unstructured
     enable_rewinding: 1  # enable the ability to rewind to previous weights
-    outer_layer_pruning: 1  # allow to prune outer layers (unstructured) or not (structured)
+    outer_layer_pruning: 0  # allow to prune outer layers (unstructured) or not (structured)
     random_shuffle_labels: 0  # run with random-label experiment from zhang et al
     l0: 0  # run with l0 criterion, might overwrite some other arguments
     hoyer_square: 0  # "run in unstructured DeephoyerSquare criterion, might overwrite some other arguments
