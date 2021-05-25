@@ -21,6 +21,7 @@ def ensure_current_directory():
 
 
 def setup_directories():
+    from utils.constants import RESULTS_DIR
     stamp = DATA_MANAGER.stamp
     dirs = OUTPUT_DIRS
     for dir_to_be in dirs:
@@ -29,6 +30,7 @@ def setup_directories():
 
 def report_error(error, model, episode, metrics):
     print(error)
+    from utils.constants import RESULTS_DIR
 
     with open(os.path.join(DATA_MANAGER.directory, RESULTS_DIR, DATA_MANAGER.stamp, OUTPUT_DIR, "error_report.txt"),
               "w") as f:
@@ -61,6 +63,7 @@ def report_error(error, model, episode, metrics):
 
 
 def save_codebase_of_run(arguments):
+    from utils.constants import RESULTS_DIR
     directory = os.path.join(DATA_MANAGER.directory, RESULTS_DIR, DATA_MANAGER.stamp, CODEBASE_DIR)
     f = open(os.path.join(directory, "arguments.txt"), "w")
     f.write(str(arguments).replace(", ", "\n"))

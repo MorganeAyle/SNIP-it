@@ -13,6 +13,10 @@ class SNIPitDuring(SNIPit):
         super(SNIPitDuring, self).__init__(*args, **kwargs)
 
     def prune(self, percentage=0.0, *args, **kwargs):
+        if len(self.steps) == 0:
+            print("finished all pruning events already")
+            return
+
         if len(self.steps) > 0:
             # determine k_i
             percentage = self.steps.pop(0)

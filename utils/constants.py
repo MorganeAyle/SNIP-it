@@ -10,7 +10,8 @@ PROJ_NAME = "SNIP-it"
 WORKING_DIR_PATH = "."
 
 # output
-RESULTS_DIR = "results"
+RESULTS_DIR = "results/"
+
 DATA_DIR = "data"
 GITIGNORED_DIR = "gitignored"
 
@@ -28,6 +29,13 @@ OUTPUT_DIRS = [OUTPUT_DIR, SUMMARY_DIR, CODEBASE_DIR, MODELS_DIR, PROGRESS_DIR]
 DATA_MANAGER = DataManager(os.path.join(WORKING_DIR_PATH, GITIGNORED_DIR))
 DATASET_PATH = os.path.join(GITIGNORED_DIR, DATA_DIR)
 RESULTS_PATH = os.path.join(DATA_MANAGER.directory, RESULTS_DIR)
+
+
+def set_results_dir(name):
+    global RESULTS_DIR, RESULTS_PATH
+    RESULTS_DIR = os.path.join(RESULTS_DIR, name)
+    RESULTS_PATH = os.path.join(DATA_MANAGER.directory, RESULTS_DIR)
+
 
 # printing
 PRINTCOLOR_PURPLE = '\033[95m'
@@ -69,6 +77,7 @@ BIG_POOL = (5, 5)
 PROD_BIG_POOL = np.prod(BIG_POOL)
 NUM_WORKERS = 6
 FLIP_CHANCE = 0.2
+# STRUCTURED_SINGLE_SHOT only used to know if need to re-initialize optimizer after pruning BEFORE training
 STRUCTURED_SINGLE_SHOT = [
     "SNAP",
     "SNAPit",
@@ -78,14 +87,19 @@ STRUCTURED_SINGLE_SHOT = [
     "CNIP",
     "CNIPit",
 ]
+# single short can never be pruned during training because of condition in default trainer (is pruning time)
 SINGLE_SHOT = [
     "SNIP",
     "SNIPit",
     "GRASP",
     "IterativeGRASP",
-    "UnstructuredRandom"
+    "UnstructuredRandom",
+    "EarlyJohn",
+    "John",
+    "Johnit"
 ]
 SINGLE_SHOT += STRUCTURED_SINGLE_SHOT
+# DURING_TRAINING are actually only used to know if need to re-initialize optimizer after pruning for structured
 DURING_TRAINING = [
     "SNAPitDuring",
     "GateDecorators",

@@ -30,10 +30,12 @@ class Pruneable(GeneralModel):
                  maintain_outer_mask_anyway=False,
                  l0_reg=1.0,
                  l2_reg=0.0,
+                 maintain_first_layer=False,
                  **kwargs):
         self.l2_reg = l2_reg
         self.l0_reg = l0_reg
         self.maintain_outer_mask_anyway = maintain_outer_mask_anyway
+        self.maintain_first_layer = maintain_first_layer
         self.beta_ema = beta_ema
         self.N = N
         self._outer_layer_pruning = outer_layer_pruning
@@ -65,7 +67,7 @@ class Pruneable(GeneralModel):
         if self.l0:
             return counter
         else:
-            return counter - addition
+            return counter - addition  # not counting the last linear layer for classification?
 
     def _set_class_references(self):
 
@@ -79,8 +81,8 @@ class Pruneable(GeneralModel):
     def post_init_implementation(self):
 
         with torch.no_grad():
-            self._num_nodes_start = self.get_num_nodes(init=True)
-            self.weight_count = self._get_weight_count()
+            self._num_nodes_start = self.get_num_nodes(init=True)  # get number of internal nodes (excluding last layer)
+            self.weight_count = self._get_weight_count()  # number of weights (excluding bias i think)
 
             if self.is_maskable:
                 self.mask = {name + ".weight": torch.ones_like(module.weight.data).to(self.device) for name, module in
@@ -98,6 +100,14 @@ class Pruneable(GeneralModel):
                     if not self.maintain_outer_mask_anyway:
                         del self.mask[names[0]]
                         del self.mask[names[-1]]
+
+                if self.maintain_first_layer:
+                    names = list(self.mask.keys())
+                    self.first_layer_name = names[0]
+                    deductable = self.mask[names[0]].flatten().size()[0]
+                    self.percentage_fraction = self.weight_count / (1 + self.weight_count - deductable)
+                    self.deductable_weightcount = deductable
+                    del self.mask[names[0]]
 
             if self.is_rewindable:
                 self.save_rewind_weights()
@@ -301,6 +311,8 @@ class Pruneable(GeneralModel):
 
     @property
     def pruned_percentage(self):
+        # self.weight_count is the original number of weights
+        # self.number_of_pruned_weights is the number of weights == 0 in the model
         return (self.number_of_pruned_weights + (self.weight_count - self._get_weight_count())) / (
                 self.weight_count + 1e-6)
 

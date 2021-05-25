@@ -11,9 +11,9 @@ slurm:
     gres: gpu:1       # num GPUs
     mem: 8G          # memory
     cpus-per-task: 1  # num cores
-    time: 0-01:00     # max time, D-HH:MM
+    time: 0-02:00     # max time, D-HH:MM
     partition: ['gpu_all']
-    # qos: interactive
+#    qos: cpu
 
 ###### BEGIN PARAMETER CONFIGURATION ######
 
@@ -21,12 +21,12 @@ fixed:
   arguments:
     eval_freq: 1000  # evaluate every n batches
     save_freq: 1e6  # save model every n epochs, besides before and after training
-    batch_size: 512  # size of batches, for Imagenette 128
+    batch_size: 64  # size of batches, for Imagenette 128
     seed: 333  # random seed
     max_training_minutes: 6120  # one hour and a 45 minutes max, process killed after n minutes (after finish of epoch)
-    plot_weights_freq: 50  # plot pictures to tensorboard every n epochs
-    prune_freq: 1  # if pruning during training: how long to wait before starting
-    prune_delay: 0  # "if pruning during training: 't' from algorithm box, interval between pruning events, default=0
+    plot_weights_freq: 10  # plot pictures to tensorboard every n epochs
+    prune_freq: 4  # if pruning during training: how long to wait between pruning events after first pruning
+    prune_delay: 8   # "if pruning during training: how long to wait before pruning first time
     epochs: 80
     rewind_to: 0  # rewind to this epoch if rewinding is done
     hidden_dim: None
@@ -36,7 +36,8 @@ fixed:
     snip_steps: 5  # 's' in algorithm box, number of pruning steps for 'rule of thumb', TODO
     pruning_rate: 0.00  # pruning rate passed to criterion at pruning event. however, most override this
     growing_rate: 0.0000  # grow back so much every epoch (for future criterions)
-    pruning_limit: 0.90  # Prune until here, if structured in nodes, if unstructured in weights. most criterions use this instead of the pruning_rate
+#    pruning_limit: 0.00  # Prune until here, if structured in nodes, if unstructured in weights. most criterions use this instead of the pruning_rate
+    prune_to: 5
     learning_rate: 2e-3
     grad_clip: 10
     grad_noise: 0  # added gaussian noise to gradients
@@ -44,22 +45,27 @@ fixed:
     l1_reg: 0  # l1-norm regularisation
     lp_reg: 0  # lp regularisation with p < 1
     l0_reg: 1.0  # l0 reg lambda hyperparam
-    hoyer_reg: 1.0  # hoyer reg lambda hyperparam
+    hoyer_reg: 0.001  # hoyer reg lambda hyperparam
     beta_ema: 0.999  # l0 reg beta ema hyperparam
+    delta_t: 100
+    t_end: 100
+    alpha: 1.0
 
     loss: CrossEntropy
     optimizer: ADAM
-    model: LeNet5  # ResNet not supported with structured
-    data_set: MNIST
-    ood_data_set: FASHION
-    prune_criterion: SNAPit  # options: SNIP, SNIPit, SNIPitDuring, UnstructuredRandom, GRASP, HoyerSquare, IMP, // SNAPit, StructuredRandom, GateDecorators, EfficientConvNets, GroupHoyerSquare
+    model: ResNet18  # ResNet not supported with structured
+    data_set: CIFAR10
+    ood_data_set: SVHN
+    prune_criterion: EarlyJohn  # HoyerSquare is one shot, pruning limit doesn't matter in this implementation
     train_scheme: DefaultTrainer  # default: DefaultTrainer
-    test_scheme: AdversarialEvaluation  # only supported on unstructured?
     attack: FGSM
-    epsilons: [0.25]
+    epsilon: 4
+    eval_ood_data_sets: ['SVHN', 'CIFAR100', 'GAUSSIAN', 'OODOMAIN']
+    eval_attacks: ['FGSM', 'L2FGSM']
+    eval_epsilons: [4, 6, 12, 24, 48]
 
     device: cuda
-    run_name: "_snapit_0.9"
+    results_dir: "ResNet18"
 
     checkpoint_name: None
     checkpoint_model: None
@@ -72,19 +78,77 @@ fixed:
 
     track_weights: 0  # "keep statistics on the weights through training
     disable_masking: 1  # disable the ability to prune unstructured
-    enable_rewinding: 1  # enable the ability to rewind to previous weights
-    outer_layer_pruning: 0  # allow to prune outer layers (unstructured) or not (structured)
+    enable_rewinding: 0  # enable the ability to rewind to previous weights
+    outer_layer_pruning: 1  # allow to prune outer layers (unstructured) or not (structured)
+    first_layer_dense: 0
     random_shuffle_labels: 0  # run with random-label experiment from zhang et al
     l0: 0  # run with l0 criterion, might overwrite some other arguments
     hoyer_square: 0  # "run in unstructured DeephoyerSquare criterion, might overwrite some other arguments
     group_hoyer_square: 0 # run in unstructured Group-DeephoyerSquare criterion, might overwrite some other arguments
 
-    disable_histograms: 1
-    disable_saliency: 1
-    disable_confusion: 1
-    disable_weightplot: 1
-    disable_netplot: 1
-    skip_first_plot: 1
+    disable_histograms: 0
+    disable_saliency: 0
+    disable_confusion: 0
+    disable_weightplot: 0
+    disable_netplot: 0
+    skip_first_plot: 0
+    disable_activations: 0
+
+# hoyer_square:
+#   fixed:
+#     arguments:
+#       loss: "HoyerSquare"
+#       prune_criterion: "HoyerSquare"
+
+#MNIST:
+#  fixed:
+#    arguments:
+#      input_dim: [1, 28, 28]
+#      output_dim: 10
+#      hidden_dim: [512]
+#      N: 60000
+
+CIFAR10:
+  fixed:
+    arguments:
+      input_dim: [3, 32, 32]
+      output_dim: 10
+      hidden_dim: [512]
+      N: 60000
+
+grid:
+  arguments:
+    pruning_limit:
+      type: choice
+      options:
+        - 0.5
+        - 0.7
+        - 0.8
+        - 0.9
+        - 0.95
+        - 0.98
+        - 0.99
+
+#    train_scheme:
+#      type: choice
+#      options:
+#        - DefaultTrainer
+#        - AdversarialTrainer
+
+#    seed:
+#      type: choice
+#      options:
+#        - 111
+#        - 222
+#        - 333
+#
+
+#    prune_criterion:
+#      type: choice
+#      options:
+#        - SNIP
+#        - GRASP
+#        - SNIPit
 
 # l0:
 #   fixed:
@@ -99,25 +163,11 @@ fixed:
 #       disable_netplot: False
 #       prune_delay: 10000000000000
 
-# hoyer_square:
-#   fixed:
-#     arguments:
-#       loss: "HoyerSquare"
-#       prune_criterion: "HoyerSquare"
-
 # group_hoyer_square:
 #   fixed:
 #     arguments:
 #       loss: "GroupHoyerSquare"
 #       prune_criterion: "GroupHoyerSquare"
-
-MNIST: 
-  fixed:
-    arguments:
-      input_dim: [1, 28, 28]
-      output_dim: 10
-      hidden_dim: [512]
-      N: 60000
 
 # FASHION:
 #   fixed:

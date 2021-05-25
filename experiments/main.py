@@ -14,18 +14,20 @@ from utils.config_utils import *
 from utils.model_utils import *
 from utils.system_utils import *
 
-from types import SimpleNamespace
+import torch
+from torch.utils.data.dataset import Dataset
+
+from torchvision import transforms
 
 
 ex = Experiment()
 seml.setup_logger(ex)
 
+
 def main(
         arguments,
         metrics: Metrics
 ):
-    # if not arguments['disable_autoconfig']:
-    #     arguments = autoconfig(arguments)
 
     global out
     out = metrics.log_line
@@ -63,7 +65,8 @@ def main(
         l0_reg=arguments['l0_reg'],
         N=arguments['N'],
         beta_ema=arguments['beta_ema'],
-        l2_reg=arguments['l2_reg']
+        l2_reg=arguments['l2_reg'],
+        maintain_first_layer=arguments['first_layer_dense']
     ).to(device)
 
     # get criterion
@@ -73,11 +76,12 @@ def main(
         limit=arguments['pruning_limit'],
         start=0.5,
         steps=arguments['snip_steps'],
-        device=arguments['device']
+        device=arguments['device'],
+        arguments=arguments
     )
 
     # load pre-trained weights if specified
-    load_checkpoint(arguments, metrics, model, out)
+    load_checkpoint(arguments, model, out)
 
     # load data
     train_loader, test_loader = find_right_model(
@@ -109,59 +113,140 @@ def main(
         weight_decay=arguments['l2_reg'] if not arguments['l0'] else 0
     )
 
-    if not arguments['eval']:
+    run_name = f'_model={arguments["model"]}_dataset={arguments["data_set"]}_ood-dataset={arguments["ood_data_set"]}' + \
+               f'_attack={arguments["attack"]}_epsilon={arguments["epsilon"]}_prune-criterion={arguments["prune_criterion"]}' + \
+               f'_pruning-limit={arguments["pruning_limit"]}_prune-freq={arguments["prune_freq"]}_prune-delay={arguments["prune_delay"]}' + \
+               f'_outer-layer-pruning={arguments["outer_layer_pruning"]}' + \
+               f'_rewind-to={arguments["rewind_to"]}_train-scheme={arguments["train_scheme"]}_seed={arguments["seed"]}'
 
-        # build adversarial tester
-        tester = find_right_model(
-            TESTERS_DIR, arguments['test_scheme'],
-            train_loader=train_loader,
-            test_loader=test_loader,
-            model=model,
-            loss=loss,
-            optimizer=optimizer,
-            device=device,
-            arguments=arguments,
-        )
+    # build trainer
+    trainer = find_right_model(
+        TRAINERS_DIR, arguments['train_scheme'],
+        model=model,
+        loss=loss,
+        optimizer=optimizer,
+        device=device,
+        arguments=arguments,
+        train_loader=train_loader,
+        test_loader=test_loader,
+        ood_loader=ood_loader,
+        metrics=metrics,
+        criterion=criterion,
+        run_name=run_name
+    )
 
-        # build trainer
-        trainer = find_right_model(
-            TRAINERS_DIR, arguments['train_scheme'],
-            model=model,
-            loss=loss,
-            optimizer=optimizer,
-            device=device,
-            arguments=arguments,
-            train_loader=train_loader,
-            test_loader=test_loader,
-            ood_loader=ood_loader,
-            metrics=metrics,
-            criterion=criterion,
-            tester=tester
-        )
+    trainer.train()
 
-        trainer.train()
+    out(f"finishing at {get_date_stamp()}")
 
-        out(f"finishing at {get_date_stamp()}")
+    results = {'train_acc': trainer.train_acc, 'test_acc': trainer.test_acc, 'sparsity': trainer.sparsity,
+               'filename': DATA_MANAGER.stamp}
 
-        return {'train_acc': trainer.train_acc, 'test_acc': trainer.test_acc, 'sparsity': trainer.sparsity, 
-                'structural_sparsity': trainer._model.structural_sparsity, 'train_entropy': trainer.train_entropy,
-                'test_entropy': trainer.test_entropy, 'ood_entropy': trainer.ood_entropy, 'filename': DATA_MANAGER.stamp,
-                f'adv_success_rate_{trainer.epsilons[0]}': trainer.success_rates[0]}
+    trainer._model.eval()
 
-    else:
+    out("EVALUATING...")
 
-        tester = find_right_model(
-            TESTERS_DIR, arguments['test_scheme'],
-            train_loader=train_loader,
-            test_loader=test_loader,
-            model=model,
-            loss=loss,
-            optimizer=optimizer,
-            device=device,
-            arguments=arguments,
-        )
+    for attack in arguments['eval_attacks']:
+        for epsilon in arguments['eval_epsilons']:
+            out("Attack {}".format(attack))
+            # build tester
+            tester = find_right_model(
+                TESTERS_DIR, 'AdversarialEvaluation',
+                attack=attack,
+                model=trainer._model,
+                device=device,
+                arguments=None,
+                test_loader=test_loader,
+            )
 
-        return tester.evaluate()
+            out("Epsilon {}".format(str(epsilon)))
+            res = tester.evaluate(epsilon=epsilon)
+
+            for key, value in res.items():
+                results[key] = value
+
+    with torch.no_grad():
+        for ood_data_set in arguments['eval_ood_data_sets']:
+            out("OOD Dataset: {}".format(ood_data_set))
+            # load data
+            _, test_loader = find_right_model(
+                DATASETS, arguments['data_set'],
+                arguments=arguments
+            )
+
+            # load OOD data
+            _, ood_loader = find_right_model(
+                DATASETS, ood_data_set,
+                arguments=arguments
+            )
+            # build tester
+            tester = find_right_model(
+                TESTERS_DIR, 'OODEvaluation',
+                model=trainer._model,
+                device=device,
+                arguments=None,
+                test_loader=test_loader,
+                ood_loader=ood_loader,
+                ood_dataset=ood_data_set
+            )
+            res = tester.evaluate()
+
+            for key, value in res.items():
+                results[key] = value
+
+    class DS(Dataset):
+
+        def __init__(self, images, labels):
+            self.images = images
+            self.labels = labels
+            self.mean = [0.485, 0.456, 0.406]  # avg 0.449
+            self.std = [0.229, 0.224, 0.225]  # avg 0.226
+            self.transforms = transforms.Compose(
+                [
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=self.mean, std=self.std)
+                ]
+            )
+
+        def __getitem__(self, item):
+            image = self.images[item] / 255
+            image = self.transforms(image.transpose((1, 2, 0)))
+            return image.to(torch.float32), torch.tensor(self.labels[item], dtype=torch.float32)
+
+        def __len__(self):
+            return len(self.images)
+
+    with torch.no_grad():
+        if arguments["data_set"] == "CIFAR10":
+            ds_path = os.path.join(DATASET_PATH, "cifar10_corrupted")
+            for ds_dataset_name in os.listdir(ds_path):
+                npz_dataset = np.load(os.path.join(ds_path, ds_dataset_name))
+
+                ds_dataset = DS(npz_dataset["images"], npz_dataset["labels"])
+                ds_loader = torch.utils.data.DataLoader(
+                    ds_dataset,
+                    batch_size=arguments['batch_size'],
+                    shuffle=False,
+                    pin_memory=True,
+                    num_workers=4
+                )
+
+                # build tester
+                tester = find_right_model(
+                    TESTERS_DIR, 'DSEvaluation',
+                    model=trainer._model,
+                    device=device,
+                    arguments=None,
+                    test_loader=test_loader,
+                    ds_loader=ds_loader,
+                    ds_dataset=ds_dataset_name.split('.')[0]
+                )
+                res = tester.evaluate()
+
+                for key, value in res.items():
+                    results[key] = value
+
+    return results
 
 
 def assert_compatibilities(arguments):
@@ -175,7 +260,8 @@ def assert_compatibilities(arguments):
     # todo: add more
 
 
-def load_checkpoint(arguments, metrics, model, out):
+def load_checkpoint(arguments, model, out):
+    from utils.constants import RESULTS_DIR
     if (not (arguments['checkpoint_name'] is None)) and (not (arguments['checkpoint_model'] is None)):
         path = os.path.join(RESULTS_DIR, arguments['checkpoint_name'], MODELS_DIR, arguments['checkpoint_model'])
         state = DATA_MANAGER.load_python_obj(path)
@@ -212,7 +298,7 @@ def config():
 
 @ex.automain
 def run(arguments):
-    #  do your processing here
+    set_results_dir(arguments["results_dir"])
     metrics = Metrics()
     out = metrics.log_line
     print = out

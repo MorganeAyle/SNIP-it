@@ -13,6 +13,8 @@ from sklearn.metrics import confusion_matrix
 from torch.utils.tensorboard import SummaryWriter
 
 from models.criterions.SNIP import SNIP
+import foolbox as fb
+from utils.attacks_utils import get_attack
 
 """
 Util classes regarding data collection, management, printing and storing
@@ -50,12 +52,13 @@ class Metrics:
         self._start_time = 0
         self._last_time = time.time()
         self._eval_freq = 0
+        self._iteration = 0
 
     def write_arguments(self, args):
 
         txt = '<table> <thead> <tr> <td> <strong> Argument </strong> </td> <td> <strong> Value </strong> </td> </tr> </thead>'
         txt += ' <tbody> '
-        for name, var in vars(args).items():
+        for name, var in args.items():
             txt += '<tr> <td> <code>' + str(name) + ' </code> </td> ' + '<td> <code> ' + str(
                 var) + ' </code> </td> ' + '<tr> '
         txt += '</tbody> </table>'
@@ -197,7 +200,9 @@ class Metrics:
 
             if trainer_ns._arguments['disable_histograms']:
                 print("doing histograms")
-                self._writer.add_histogram("weight/magnitude", histograms, epoch)
+                for layer, histogram in enumerate(histograms):
+                    self._writer.add_histogram(f"weight/layer_{layer}.magnitude", histogram, epoch)
+                # self._writer.add_histogram("weight/magnitude", histograms, epoch)
                 self._writer.add_histogram("layer/sparsity", sparsities, epoch)
 
             if trainer_ns._arguments['disable_confusion']:
@@ -224,7 +229,8 @@ class Metrics:
         g = nx.Graph()
         layer_nodes = {}
         layer_active = {}
-        weight_histograms = torch.zeros([0]).float()
+        # weight_histograms = torch.zeros([0]).float()
+        weight_histograms = []
         sparsities = torch.zeros([0]).float()
 
         i = 0  # have to count manually becauseof l0
@@ -248,6 +254,43 @@ class Metrics:
 
             # handle graph
             self.handle_graph_building(graph, i, layer_active, layer_nodes, plottable)
+
+        if trainer_ns._arguments['disable_activations']:
+            activations = []
+            trainer_ns._model.eval()
+            for batch in trainer_ns._test_loader:
+
+                x, y = batch
+
+                bounds = (x.min().item(), x.max().item())
+                fmodel = fb.PyTorchModel(trainer_ns._model, bounds=bounds, device=trainer_ns._arguments['device'])
+
+                x = x.to(trainer_ns._arguments['device'])
+                y = y.to(trainer_ns._arguments['device'])
+
+                attack = get_attack(trainer_ns._arguments['attack'])
+
+                _, adv, res = attack(fmodel, x, y, epsilons=trainer_ns._arguments['epsilons'])
+
+                trainer_ns._model.forward(x)
+                orig_activations = trainer_ns._model.activations
+
+                trainer_ns._model.forward(torch.cat(adv).to(trainer_ns._arguments['device']))
+                adv_activations = trainer_ns._model.activations
+
+                for act_idx, (act, adv_act) in enumerate(zip(orig_activations, adv_activations)):
+                    try:
+                        activations[act_idx] += torch.sum(torch.abs(adv_act.squeeze() - act.squeeze()), dim=0)
+                    except IndexError:
+                        activations.append(torch.sum(torch.abs(adv_act.squeeze() - act.squeeze()), dim=0))
+
+            for act_idx, act_diff in enumerate(activations):
+                top_diff = torch.topk(act_diff, 10)
+                min_diff = top_diff[0][-1]
+                act_plottable = act_diff >= min_diff
+                act_plottable = act_plottable.long().unsqueeze(0).unsqueeze(1).numpy()
+                trainer_ns._writer.add_image("weight/layer_" + str(act_idx), act_plottable, epoch)
+            trainer_ns._model.train()
 
         return canvas, fig, g, weight_histograms, layer_active, layer_nodes, sparsities
 
@@ -307,7 +350,8 @@ class Metrics:
                                         flattend.nonzero().flatten().shape[0] / flattend.shape[0])])
 
         # add to weight histograms
-        weight_histograms = torch.cat([weight_histograms, 100 * flattend.cpu()])
+        # weight_histograms = torch.cat([weight_histograms, 100 * flattend.cpu()])
+        weight_histograms.append(100 * flattend.cpu())
         return sparsities, weight_histograms
 
     def _write_confusion_matrix(self, epoch, trainer_ns):

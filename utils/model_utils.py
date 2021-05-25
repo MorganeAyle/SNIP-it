@@ -8,11 +8,12 @@ import torch.optim as opt
 from utils.constants import *
 from utils.data_loaders import *
 
-models = {x: {} for x in types}
+models = {x: {} for x in types}  # types = [LOSS_DIR, NETWORKS_DIR, CRITERION_DIR, TRAINERS_DIR, TESTERS_DIR]
 
 """
 Handles loading/init/saving of models and more
 """
+
 
 def _read_all_class_names():
     """
@@ -45,6 +46,10 @@ def _read_all_class_names():
     models[DATASETS]["OMNIGLOT"] = get_omniglot_loaders
     models[DATASETS]["FASHION"] = get_fashionmnist_loaders
     models[DATASETS]["GAUSSIAN"] = get_gaussian_noise_loaders
+    models[DATASETS]["SVHN"] = get_svhn_loaders
+    models[DATASETS]["KMNIST"] = get_kmnist_loaders
+    models[DATASETS]["OMNIGLOT"] = get_omniglot_loaders
+    models[DATASETS]["OODOMAIN"] = get_oodomain_loaders
 
 
 def find_right_model(type: str, name: str, **kwargs):
@@ -70,6 +75,8 @@ def save_models(models: List[nn.Module],
     """
     Saves current state of models
     """
+
+    from utils.constants import RESULTS_DIR
 
     for mod in models:
         modstr = str(mod.__class__).split(".")[-1].replace("'>", "_")

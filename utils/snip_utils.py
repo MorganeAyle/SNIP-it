@@ -34,3 +34,4 @@ def group_snip_conv2d_forward(self, x):
                      self.padding,
                      self.dilation,
                      self.groups).permute(0, 3, 2, 1) * self.gov_out.float()).permute(0, 3, 2, 1)
+

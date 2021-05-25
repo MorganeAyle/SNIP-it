@@ -28,7 +28,7 @@ class GRASP(SNIP):
     def get_grow_indices(self, *args, **kwargs):
         raise NotImplementedError
 
-    def get_weight_saliencies(self, train_loader):
+    def get_weight_saliencies(self, train_loader, ood_loader=None):
 
         device = self.model.device
 
@@ -43,7 +43,7 @@ class GRASP(SNIP):
         for name, layer in net.named_modules():
             if "Norm" in str(layer): continue
             if name + ".weight" in self.model.mask:
-                grads[name + ".weight"] = -layer.weight.data * layer.weight.grad
+                grads[name + ".weight"] = - layer.weight.data * layer.weight.grad  # torch.abs(layer.weight.data * layer.weight.grad)
 
         # Gather all scores in a single vector and normalise
         all_scores = torch.cat([torch.flatten(x) for _, x in grads.items()])

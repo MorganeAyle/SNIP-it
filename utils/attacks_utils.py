@@ -1,6 +1,7 @@
 import foolbox as fb
 import torch
 
+
 def get_attack(method_name):
 
     att = fb.attacks
@@ -13,6 +14,7 @@ def get_attack(method_name):
         "L1FastGradientAttack": att.L1FastGradientAttack,
         "L2DeepFoolAttack": att.L2DeepFoolAttack,
         "FGSM": att.FGSM,
+        "L2FGSM": att.L2FastGradientAttack,
         "DDNAttack": att.DDNAttack,
         "SaltAndPepperNoiseAttack": att.SaltAndPepperNoiseAttack,
         "L2RepeatedAdditiveGaussianNoiseAttack": att.L2RepeatedAdditiveGaussianNoiseAttack,
@@ -21,8 +23,9 @@ def get_attack(method_name):
     return attack
 
 
-def construct_adversarial_examples(im, crit, method, model, device, exclude_wrong_predictions, targeted, epsilons):
+def construct_adversarial_examples(im, crit, method, model, device, epsilon, exclude_wrong_predictions=False, targeted=False):
     bounds = (im.min().item(), im.max().item())
+    epsilon = epsilon / 255
     fmodel = fb.PyTorchModel(model, bounds=bounds, device=device)
 
     im = im.to(device)
@@ -47,6 +50,4 @@ def construct_adversarial_examples(im, crit, method, model, device, exclude_wron
 
     attack = get_attack(method)
 
-    return attack(fmodel, im, crit, epsilons=epsilons), predictions
-
-    
+    return attack(fmodel, im, crit, epsilons=epsilon), predictions

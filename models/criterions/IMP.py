@@ -30,7 +30,6 @@ class IMP(General):
             percentage = self.steps.pop(0)
             limit = 0
 
-
             if self.global_pruning:
 
                 # get threshold

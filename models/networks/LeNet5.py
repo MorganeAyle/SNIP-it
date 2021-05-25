@@ -39,7 +39,6 @@ class LeNet5(Pruneable):
             self.Linear(120*PROD_MIDDLE_POOL, 84, bias=True, gain=gain),
             nn.BatchNorm1d(84, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
             nn.LeakyReLU(leak),
-
             nn.Dropout(p=0.3, inplace=False),
             self.Linear(84, output_dim, bias=True),
         ).to(device)

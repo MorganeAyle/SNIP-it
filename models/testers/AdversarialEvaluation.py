@@ -1,9 +1,10 @@
-import foolbox as fb
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn.functional as F
+from torch.distributions import Categorical
 
 from utils.attacks_utils import construct_adversarial_examples
+from utils.metrics import calculate_aupr, calculate_auroc, calculate_brier_score
 
 
 class AdversarialEvaluation:
@@ -12,47 +13,81 @@ class AdversarialEvaluation:
     Performs evaluation to adversarial attacks
     """
 
-    def __init__(self, train_loader, test_loader, model, loss, optimizer, device, arguments, **kwargs):
+    def __init__(self, attack, test_loader, model, device, arguments, **kwargs):
         self.args = arguments
-        self.fb = fb
+        self.method = attack
         self.device = device
-        self.optimizer = optimizer
-        self.loss = loss
         self.model = model
-        self.loader_test = test_loader
-        self.loader = train_loader
+        self.test_loader = test_loader
 
-    def evaluate(self, plot=False, targeted=False, exclude_wrong_predictions=False, epsilons=[0.25, 0.5, 0.75, 1.0, 2, 3, 4, 5, 6, 7, 8, 9, 10], curr_model=None):
+    def evaluate(self, targeted=False, exclude_wrong_predictions=False, epsilon=6, **kwargs):
 
-        method = self.args['attack']
+        method = self.method
 
-        if curr_model is None:
-            model = self.model.eval().to(self.device)
-        else:
-            model = curr_model
+        model = self.model.eval().to(self.device)
 
-        im, crit = next(iter(self.loader_test))
-        adv_results, predictions = construct_adversarial_examples(im, crit, method, model, self.device, exclude_wrong_predictions, targeted, epsilons)
-        _, advs, success = adv_results
+        success_rates = []
+        true_labels = np.zeros(0)
+        all_preds = np.zeros(0)
+        entropies = []
+        ood_entropies = []
+        for im, crit in self.test_loader:
 
-        plt.title(method)
+            # probs for indistribution
+            x, y = im, crit
+            x = x.to(self.device)
 
-        sucess_rates = []
-        for eps, eps_adv, eps_success in zip(epsilons, advs, success):
-            attack_success = (eps_success.float().sum() / len(eps_success)).item()
-            adv_equality = (model.forward(eps_adv).argmax(dim=-1) == predictions)
-            predicted_same_as_model = (adv_equality.float().sum() / len(eps_success)).item()
+            out = self.model(x)
+            probs = F.softmax(out, dim=-1)
+            preds, indices = torch.max(probs, dim=-1)
 
-            sucess_rates.append(attack_success)
+            entropy = Categorical(probs).entropy().squeeze().mean()
+            entropies.append(entropy.detach().cpu().numpy())
 
-            if curr_model is None:
-                print("EPSILON", eps,
-                    "Successes attack", attack_success,
-                    "same prediction as model", predicted_same_as_model,
-                    "bounds adver", eps_adv.min().item(), eps_adv.max().item(),
-                    "norm", np.mean([torch.norm(eps_adv_ - im_, p=2).item() for eps_adv_, im_ in zip(eps_adv, im)]))
+            true_labels = np.concatenate((true_labels, np.ones(len(x))))
+            all_preds = np.concatenate((all_preds, preds.detach().cpu().reshape((-1))))
 
-            if plot:
-                self._plot(adv_equality, eps, eps_adv, im, model)
+            adv_results, predictions = construct_adversarial_examples(im, crit, method, model, self.device, epsilon, exclude_wrong_predictions, targeted)
+            _, advs, success = adv_results
 
-        return epsilons, np.array(sucess_rates)
+            attack_success = (success.float().sum() / len(success)).item()
+            adv_equality = (model.forward(advs).argmax(dim=-1) == predictions)
+            predicted_same_as_model = (adv_equality.float().sum() / len(success)).item()
+
+            advs = advs.cpu()
+
+            success_rates.append(attack_success)
+
+            print("EPSILON", epsilon,
+                "Successes attack", attack_success,
+                "same prediction as model", predicted_same_as_model,
+                "bounds adver", advs.min().item(), advs.max().item(),
+                "norm", np.mean([torch.norm(eps_adv_ - im_, p=2).item() for eps_adv_, im_ in zip(advs, im)]))
+
+            # probs for outofdistribution
+            x = advs.to(self.device)
+
+            out = self.model(x)
+            probs = F.softmax(out, dim=-1)
+            preds, indices = torch.max(probs, dim=-1)
+
+            entropy = Categorical(probs).entropy().squeeze().mean()
+            ood_entropies.append(entropy.detach().cpu().numpy())
+
+            true_labels = np.concatenate((true_labels, np.zeros(len(x))))
+            all_preds = np.concatenate((all_preds, preds.detach().cpu().reshape((-1))))
+
+        success_name = f'success_rate_{self.method}_{epsilon}'
+
+        auroc = calculate_auroc(true_labels, all_preds)
+        aupr = calculate_aupr(true_labels, all_preds)
+
+        auroc_name = f'auroc_{self.method}_{epsilon}'
+        aupr_name = f'aupr_{self.method}_{epsilon}'
+        entropy_name = f'entropy_{self.method}_{epsilon}'
+
+        return {success_name: np.mean(success_rates),
+                auroc_name: auroc,
+                aupr_name: aupr,
+                entropy_name: np.mean(ood_entropies)
+                }

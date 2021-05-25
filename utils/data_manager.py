@@ -3,8 +3,17 @@ import json
 import os
 from collections import defaultdict
 from datetime import datetime
+import io
 
+import torch
 import matplotlib.pyplot as plt
+
+
+class CpuUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module == 'torch.storage' and name == '_load_from_bytes':
+            return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
+        else: return super().find_class(module, name)
 
 
 class DataManager:
@@ -35,14 +44,17 @@ class DataManager:
             print(e)
             print("Failed saving {}, continue anyway".format(name))
 
-    def load_python_obj(self, name):
+    def load_python_obj(self, name, device='cuda'):
         """ Loads python object from disk if pickle """
 
         obj = None
         try:
             filepath = os.path.join(self.directory, f'{name}.pickle')
             with (open(filepath, "rb")) as openfile:
-                obj = pickle.load(openfile)
+                if device == 'cpu':
+                    obj = CpuUnpickler(openfile).load()
+                else:
+                    obj = pickle.load(openfile)
         except FileNotFoundError:
             print("{} not loaded because file is missing".format(name))
             return

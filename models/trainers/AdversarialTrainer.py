@@ -1,15 +1,17 @@
 import torch
 import torch.nn.functional as F
 import foolbox as fb
+from torch.distributions import Categorical
 
 from models.trainers.DefaultTrainer import DefaultTrainer
 from utils.attacks_utils import construct_adversarial_examples
+
 
 class AdversarialTrainer(DefaultTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.attack_method = self._arguments['attack']
-        self.epsilons = self._arguments['epsilons']
+        self.epsilon = self._arguments['epsilon']
 
     def _batch_iteration(self,
                          x: torch.Tensor,
@@ -27,9 +29,9 @@ class AdversarialTrainer(DefaultTrainer):
             self._model.eval()
             if self._model.is_maskable:
                 self._model.apply_weight_mask()
-            adv_results, _ = construct_adversarial_examples(x_to_adv, y_to_adv, self.attack_method, self._model, self._device, exclude_wrong_predictions, targeted, self.epsilons)
+            adv_results, _ = construct_adversarial_examples(x_to_adv, y_to_adv, self.attack_method, self._model, self._device, self.epsilon, exclude_wrong_predictions, targeted)
             _, advs, _ = adv_results
-            x = torch.cat((torch.cat(advs).cpu(), x[adv_batch_size:]))
+            x = torch.cat((advs.cpu(), x[adv_batch_size:]))
 
             self._model.train()
 
@@ -48,13 +50,16 @@ class AdversarialTrainer(DefaultTrainer):
         # forward pass
         accuracy, loss, out = self._forward_pass(x, y, train=train)
 
-        # compute entropy
-        prob = F.softmax(out, dim=1)
-        entropy = -torch.sum(prob * torch.log(prob + 1e-8)) / x.shape[0]
-
         # backward pass
         if train:
             self._backward_pass(loss)
+
+        # compute entropy
+        probs = F.softmax(out, dim=-1)
+        entropy = Categorical(probs).entropy().squeeze().mean()
+
+        # get max predicted prob
+        preds, _ = torch.max(probs, dim=-1)
 
         # record time
         if "cuda" in str(self._device):
@@ -65,7 +70,7 @@ class AdversarialTrainer(DefaultTrainer):
             time = 0
 
         # free memory
-        for tens in [out, y, x, loss, entropy]:
+        for tens in [out, y, x, loss, entropy, preds]:
             tens.detach()
 
-        return accuracy, loss.item(), time, entropy.detach().cpu()
+        return accuracy, loss.item(), time, entropy.detach().cpu(), preds.cpu()

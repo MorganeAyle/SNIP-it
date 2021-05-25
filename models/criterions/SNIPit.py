@@ -11,6 +11,7 @@ class SNIPit(SNIP):
     def __init__(self, *args, limit=0.0, steps=5, **kwargs):
         self.limit = limit
         super(SNIPit, self).__init__(*args, **kwargs)
+        # always smaller than limit, steps+1 elements (including limit)
         self.steps = [limit - (limit - 0.5) * (0.5 ** i) for i in range(steps + 1)] + [limit]
 
     def get_prune_indices(self, *args, **kwargs):

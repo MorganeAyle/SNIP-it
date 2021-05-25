@@ -26,6 +26,7 @@ class HoyerSquare(General):
 
         # only prune once
         if self.pruned:
+            print("ALREADY PRUNED")
             return
         else:
             self.pruned = True
@@ -34,7 +35,7 @@ class HoyerSquare(General):
             for (name, weights) in self.model.named_parameters():
 
                 if name in self.model.mask:
-                    mask = weights.abs() > HOYER_THERSHOLD
+                    mask = weights.abs() > HOYER_THERSHOLD  # 1e-3 by default
 
                     self.model.mask[name] = mask
 

@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from torch.optim.optimizer import Optimizer
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+import numpy as np
+from torch.distributions import Categorical
 
 from models import GeneralModel
 from models.statistics import Metrics
@@ -14,10 +16,11 @@ from models.statistics.Flops import FLOPCounter
 from models.statistics.Saliency import Saliency
 from utils.model_utils import find_right_model
 from utils.system_utils import *
+from utils.attacks_utils import construct_adversarial_examples
+from utils.metrics import calculate_aupr, calculate_auroc
 
 
 class DefaultTrainer:
-
     """
     Implements generalised computer vision classification with pruning
     """
@@ -33,7 +36,7 @@ class DefaultTrainer:
                  ood_loader: DataLoader,
                  metrics: Metrics,
                  criterion: GeneralModel,
-                 tester
+                 run_name
                  ):
 
         self._test_loader = test_loader
@@ -46,7 +49,8 @@ class DefaultTrainer:
         self._device = device
         self._global_steps = 0
         self.out = metrics.log_line
-        DATA_MANAGER.set_date_stamp(addition=arguments['run_name'])
+        DATA_MANAGER.set_date_stamp(addition=run_name)
+        from utils.constants import RESULTS_DIR
         self._writer = SummaryWriter(os.path.join(DATA_MANAGER.directory, RESULTS_DIR, DATA_MANAGER.stamp, SUMMARY_DIR))
         self._metrics: Metrics = metrics
         self._metrics.init_training(self._writer)
@@ -55,9 +59,12 @@ class DefaultTrainer:
         self._entropy_buffer = []
         self._elapsed_buffer = []
         self._criterion = criterion
-        self._tester = tester
 
         self.ts = None
+
+        ## John
+        self._stable = False
+        ##
 
         batch = next(iter(self._test_loader))
         self.saliency = Saliency(model, device, batch[0][:8])
@@ -86,13 +93,19 @@ class DefaultTrainer:
         # forward pass
         accuracy, loss, out = self._forward_pass(x, y, train=train)
 
-        # compute entropy
-        prob = F.softmax(out, dim=1)
-        entropy = -torch.sum(prob * torch.log(prob + 1e-8)) / x.shape[0]
+        if self._arguments['prune_criterion'] == 'RigL':
+            self._handle_pruning(self._metrics._epoch)
 
         # backward pass
         if train:
             self._backward_pass(loss)
+
+        # compute entropy
+        probs = F.softmax(out, dim=-1)
+        entropy = Categorical(probs).entropy().squeeze().mean()
+
+        # get max predicted prob
+        preds, _ = torch.max(probs, dim=-1)
 
         # record time
         if "cuda" in str(self._device):
@@ -103,10 +116,10 @@ class DefaultTrainer:
             time = 0
 
         # free memory
-        for tens in [out, y, x, loss, entropy]:
+        for tens in [out, y, x, loss, entropy, preds]:
             tens.detach()
 
-        return accuracy, loss.item(), time, entropy.detach().cpu()
+        return accuracy, loss.item(), time, entropy.detach().cpu(), preds.cpu()
 
     def _forward_pass(self,
                       x: torch.Tensor,
@@ -134,6 +147,13 @@ class DefaultTrainer:
         """ implementation of a backward pass """
 
         loss.backward()
+        # layer_count = 0
+        # for name, layer in self._model.named_modules():
+        #     if "Norm" in str(layer): continue
+        #     if name + ".weight" in self._model.mask:
+        #         self._writer.add_scalar("grad_l1_norm/" + "layer" + str(layer_count) + "_" + name, layer.weight.grad.norm(1), self._metrics.batch_train)
+        #         self._writer.add_scalar("weight_l1_norm/" + "layer" + str(layer_count) + "_" + name, layer.weight.norm(1), self._metrics.batch_train)
+        #         layer_count += 1
         self._model.insert_noise_for_gradient(self._arguments['grad_noise'])
         if self._arguments['grad_clip'] > 0:
             torch.nn.utils.clip_grad_norm_(self._model.parameters(), self._arguments['grad_clip'])
@@ -155,7 +175,7 @@ class DefaultTrainer:
             if self._model.is_tracking_weights:
                 self._model.save_prev_weights()
 
-            acc, loss, elapsed, entropy = self._batch_iteration(*batch, self._model.training)
+            acc, loss, elapsed, entropy, preds = self._batch_iteration(*batch, self._model.training)
 
             if self._model.is_tracking_weights:
                 self._model.update_tracked_weights(self._metrics.batch_train)
@@ -176,13 +196,15 @@ class DefaultTrainer:
 
         if (batch_num % self._arguments['eval_freq']) == 0:
             # validate on test and train set
-            self.train_acc, train_loss, self.train_entropy = np.mean(self._acc_buffer), np.mean(self._loss_buffer), np.mean(self._entropy_buffer)
-            self.test_acc, test_loss, test_elapsed, self.test_entropy, self.ood_entropy, self.epsilons, self.success_rates = self.validate()
+            self.train_acc, train_loss, self.train_entropy = np.mean(self._acc_buffer), np.mean(
+                self._loss_buffer), np.mean(self._entropy_buffer)
+            self.test_acc, test_loss, test_elapsed, self.test_entropy, self.ood_entropy, self.success_rate, ood_preds, ood_true = self.validate()
             self._elapsed_buffer += test_elapsed
 
             # log metrics
-            self._add_metrics(self.test_acc, test_loss, self.train_acc, train_loss, self.train_entropy, self.test_entropy, self.ood_entropy, self.epsilons, 
-                                self.success_rates)
+            self._add_metrics(self.test_acc, test_loss, self.train_acc, train_loss, self.train_entropy,
+                              self.test_entropy, self.ood_entropy,
+                              self.success_rate, ood_preds, ood_true)
 
             # reset for next log
             self._acc_buffer, self._loss_buffer, self._elapsed_buffer, self._entropy_buffer = [], [], [], []
@@ -197,39 +219,66 @@ class DefaultTrainer:
 
         # init test mode
         self._model.eval()
-        cum_acc, cum_loss, cum_elapsed, cum_entropy, ood_cum_entropy = [], [], [], [], []
+        cum_acc, cum_loss, cum_elapsed, cum_entropy, ood_cum_entropy, success_rates = [], [], [], [], [], []
+
+        ood_true = np.zeros(0)
+        ood_preds = np.zeros(0)
 
         with torch.no_grad():
             for batch_num, batch in enumerate(self._test_loader):
-                acc, loss, elapsed, entropy = self._batch_iteration(*batch, self._model.training)
+                acc, loss, elapsed, entropy, preds = self._batch_iteration(*batch, self._model.training)
                 cum_acc.append(acc)
                 cum_loss.append(loss),
                 cum_elapsed.append(elapsed)
                 cum_entropy.append(entropy)
+                ood_true = np.concatenate((ood_true, np.ones(len(preds))))
+                ood_preds = np.concatenate((ood_preds, preds.reshape((-1))))
                 self.out(f"\rEvaluating... {batch_num}/{len(self._test_loader)}", end='')
         self.out("\n")
 
         # validate on OOD data
         with torch.no_grad():
             for batch_num, batch in enumerate(self._ood_loader):
-                _, _, _, entropy = self._batch_iteration(*batch, self._model.training)
+                _, _, _, entropy, preds = self._batch_iteration(*batch, self._model.training)
                 ood_cum_entropy.append(entropy)
+                ood_true = np.concatenate((ood_true, np.zeros(len(preds))))
+                ood_preds = np.concatenate((ood_preds, preds.reshape((-1))))
 
         # validate on adversarial attacks
-        epsilons, success_rates = self._tester.evaluate(epsilons=self._arguments['epsilons'], curr_model=self._model)
+        for batch_num, batch in enumerate(self._test_loader):
+            im, crit = batch
+            adv_results, predictions = construct_adversarial_examples(im, crit, self._arguments['attack'], self._model,
+                                                                      self._device, self._arguments['epsilon'])
+            _, advs, success = adv_results
+            attack_success = (success.float().sum() / len(success)).item()
+            success_rates.append(attack_success)
 
         # put back into train mode
         self._model.train()
 
-        return float(np.mean(cum_acc)), float(np.mean(cum_loss)), cum_elapsed, float(np.mean(cum_entropy)), float(np.mean(ood_cum_entropy)), epsilons, success_rates
+        return float(np.mean(cum_acc)), float(np.mean(cum_loss)), cum_elapsed, float(np.mean(cum_entropy)), float(
+            np.mean(ood_cum_entropy)), float(np.mean(success_rates)), ood_preds, ood_true
 
-    def _add_metrics(self, test_acc, test_loss, train_acc, train_loss, train_entropy, test_entropy, ood_entropy, epsilons, success_rates):
+    def _add_metrics(self, test_acc, test_loss, train_acc, train_loss, train_entropy, test_entropy, ood_entropy,
+                     success_rate, ood_preds, ood_true):
         """
         save metrics
         """
 
         self.sparsity = self._model.pruned_percentage
         spasity_index = 2 * ((self.sparsity * test_acc) / (1e-8 + self.sparsity + test_acc))
+
+        # L0 norm of weights
+        l0_norm_weights = 0
+        for name, layer in self._model.named_modules():
+            if name + ".weight" in self._model.mask:
+                large_weights = torch.abs(layer.weight) > 0.01
+                l0_norm_weights += torch.nonzero(large_weights).shape[0]
+
+        # AU-ROC
+        self.auroc = calculate_auroc(ood_true, ood_preds)
+        # AU-PR
+        self.aupr = calculate_aupr(ood_true, ood_preds)
 
         flops_per_sample, total_seen = self._flopcounter.count_flops(self._metrics.batch_train)
 
@@ -239,8 +288,11 @@ class DefaultTrainer:
         self._metrics.add(test_loss, key="loss/test")
         self._metrics.add(test_acc, key="acc/test")
         self._metrics.add(test_entropy, key="entropy/test")
-        self._metrics.add(success_rates[0], key=f"adv_success_rate_{epsilons[0]}/test")
+        self._metrics.add(success_rate, key=f"adv_success_rate/test")
         self._metrics.add(ood_entropy, key="entropy/ood")
+        self._metrics.add(self.auroc, key="entropy/auroc")
+        self._metrics.add(self.aupr, key="entropy/aupr")
+        self._metrics.add(l0_norm_weights, key="sparse/l0_norm")
         self._metrics.add(self.sparsity, key="sparse/weight")
         self._metrics.add(self._model.structural_sparsity, key="sparse/node")
         self._metrics.add(spasity_index, key="sparse/hm")
@@ -254,6 +306,7 @@ class DefaultTrainer:
 
     def train(self):
         """ main training function """
+        from utils.constants import RESULTS_DIR
 
         # setup data output directories:
         setup_directories()
@@ -272,20 +325,37 @@ class DefaultTrainer:
                 f"{PRINTCOLOR_BOLD}Started training{PRINTCOLOR_END}"
             )
 
+            if "Early" in self._arguments['prune_criterion']:
+                # for i in range(10):
+                # self._metrics.handle_weight_plotting(epoch, trainer_ns=self)
+                while self._stable == False:
+                    self.out("Network has not reached stable state")
+                    self.out(f"\n\n{PRINTCOLOR_BOLD}EPOCH {epoch} {PRINTCOLOR_END} \n\n")
+                    # do epoch
+                    self._epoch_iteration()
+                    if epoch == self._arguments['prune_to']:
+                        self._stable = True
+                    epoch += 1
+
             if self._arguments['skip_first_plot']:
                 self._metrics.handle_weight_plotting(0, trainer_ns=self)
 
-            # if snip we prune before training
+            # if prune before training
             if self._arguments['prune_criterion'] in SINGLE_SHOT:
                 self._criterion.prune(self._arguments['pruning_limit'],
                                       train_loader=self._train_loader,
                                       manager=DATA_MANAGER)
+                # If structured, probably needs to re-initialize optimizer with new architecture
                 if self._arguments['prune_criterion'] in STRUCTURED_SINGLE_SHOT:
                     self._optimizer = find_right_model(OPTIMS, self._arguments['optimizer'],
                                                        params=self._model.parameters(),
                                                        lr=self._arguments['learning_rate'],
                                                        weight_decay=self._arguments['l2_reg'])
                     self._metrics.model_to_tensorboard(self._model, timestep=epoch)
+
+            if self._arguments['prune_criterion'] == 'RigL':
+                # TODO do random pruning
+                pass
 
             # do training
             for epoch in range(epoch, self._arguments['epochs'] + epoch):
@@ -329,6 +399,7 @@ class DefaultTrainer:
         self._writer.close()
 
     def _handle_backing_up(self, epoch):
+        from utils.constants import RESULTS_DIR
         if (epoch % self._arguments['save_freq']) == 0 and epoch > 0:
             self.out("\nSAVING...\n")
             save_models(
@@ -342,25 +413,32 @@ class DefaultTrainer:
         )
 
     def _handle_pruning(self, epoch):
-        if self._is_pruning_time(epoch):
+        if self._is_pruning_time(epoch, self._metrics.batch_train):
+            self.out("\nIS PRUNING TIME...\n")
             if self._is_not_finished_pruning():
                 self.out("\nPRUNING...\n")
-                self._criterion.prune(
-                    percentage=self._arguments['pruning_rate'],
-                    train_loader=self._train_loader,
-                    manager=DATA_MANAGER
-                )
-                if self._arguments['prune_criterion'] in DURING_TRAINING:
-                    self._optimizer = find_right_model(
-                        OPTIMS, self._arguments['optimizer'],
-                        params=self._model.parameters(),
-                        lr=self._arguments['learning_rate'],
-                        weight_decay=self._arguments['l2_reg']
+                if self._arguments['prune_criterion'] == 'HYDRA':
+                    self._criterion.prune(self._arguments['pruning_limit'])
+                else:
+                    self._criterion.prune(
+                        # percentage overwritten in SNIPitDuring, IMP by the step, not used in HoyerSquare
+                        percentage=self._arguments['pruning_rate'],  # I think GroupHoyerSquare uses it, EfficientConvNets
+                        train_loader=self._train_loader,
+                        manager=DATA_MANAGER,
+                        ood_loader=self._ood_loader,
                     )
-                    self._metrics.model_to_tensorboard(self._model, timestep=epoch)
-                if self._model.is_rewindable:
-                    self.out("rewinding weights to checkpoint...\n")
-                    self._model.do_rewind()
+                    # DURING_TRAINING actually contains only structured ones, need to re-initialize optimizer
+                    if self._arguments['prune_criterion'] in DURING_TRAINING:
+                        self._optimizer = find_right_model(
+                            OPTIMS, self._arguments['optimizer'],
+                            params=self._model.parameters(),
+                            lr=self._arguments['learning_rate'],
+                            weight_decay=self._arguments['l2_reg']
+                        )
+                        self._metrics.model_to_tensorboard(self._model, timestep=epoch)
+                    if self._model.is_rewindable:
+                        self.out("rewinding weights to checkpoint...\n")
+                        self._model.do_rewind()
             if self._model.is_growable:
                 self.out("growing too...\n")
                 self._criterion.grow(self._arguments['growing_rate'])
@@ -370,12 +448,18 @@ class DefaultTrainer:
             self._model.save_rewind_weights()
 
     def _is_not_finished_pruning(self):
-        return self._arguments['pruning_limit'] > self._model.pruned_percentage \
+
+        print(self._arguments['pruning_limit'] > (self._model.pruned_percentage + 0.01))
+
+        return self._arguments['pruning_limit'] > (self._model.pruned_percentage + 0.01) \
                or \
                (
                        self._arguments['prune_criterion'] in DURING_TRAINING
                        and
                        self._arguments['pruning_limit'] > self._model.structural_sparsity
+               ) or  \
+               (
+                       self._arguments['prune_criterion'] == 'RigL'
                )
 
     @staticmethod
@@ -387,12 +471,16 @@ class DefaultTrainer:
     def _is_checkpoint_time(self, epoch: int):
         return epoch == self._arguments['rewind_to'] and self._model.is_rewindable
 
-    def _is_pruning_time(self, epoch: int):
+    def _is_pruning_time(self, epoch: int, iteration: int):
         if self._arguments['prune_criterion'] == "EmptyCrit":
             return False
+        if self._arguments['prune_criterion'] == 'RigL':
+            return (iteration % self._arguments['delta_t']) == 0 and \
+                   iteration < self._arguments['t_end']
+
         epoch -= self._arguments['prune_delay']
         return (epoch % self._arguments['prune_freq']) == 0 and \
-               epoch > 0 and \
+               epoch >= 0 and \
                self._model.is_maskable and \
                self._arguments['prune_criterion'] not in SINGLE_SHOT
 

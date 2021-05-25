@@ -1,0 +1,78 @@
+seml:
+  executable: experiments/evaluate.py
+  name: evaluate
+  output_dir: gitignored/logs
+  project_root_dir: ..
+  conda_environment: gr
+
+slurm:
+  experiments_per_job: 1
+  sbatch_options:
+    gres: gpu:1       # num GPUs
+    mem: 8G          # memory
+    cpus-per-task: 1  # num cores
+    time: 0-06:00     # max time, D-HH:MM
+    partition: ['gpu_all']
+#    qos: cpu
+
+###### BEGIN PARAMETER CONFIGURATION ######
+
+fixed:
+  arguments:
+    batch_size: 512  # size of batches, for Imagenette 128
+    hidden_dim: None
+    input_dim: None
+    output_dim: None
+    N: 1  # size of dataset (used for l0)
+
+    test_scheme: AdversarialEvaluation
+    model: LeNet5  # ResNet not supported with structured
+    data_set: MNIST
+    ood_data_set: FASHION
+    attack: FGSM
+    epsilon: 6
+
+    device: cuda
+    results_dir: "LeNet5"
+
+    checkpoint_name: "2021-05-10_10.53.24_model=LeNet5_dataset=MNIST_ood-dataset=FASHION_attack=FGSM_epsilon=12_prune-criterion=EmptyCrit_pruning-limit=0.0_prune-freq=1_prune-delay=0_outer-layer-pruning=0_rewind-to=0_train-scheme=DefaultTrainer_seed=222"
+    checkpoint_model: LeNet5_finished
+
+    disable_cuda_benchmark: 1  # speedup (disable) vs reproducibility (leave it)
+    eval: 1
+    disable_autoconfig: 0  # for the brave
+    preload_all_data: 0  # load all data into ram memory for speedups
+    random_shuffle_labels: 0  # run with random-label experiment from zhang et al
+    tuning: 0
+
+MNIST:
+  fixed:
+    arguments:
+      input_dim: [1, 28, 28]
+      output_dim: 10
+      hidden_dim: [512]
+      N: 60000
+
+#CIFAR10:
+#  fixed:
+#    arguments:
+#      input_dim: [3, 32, 32]
+#      output_dim: 10
+#      hidden_dim: [512]
+#      N: 60000
+
+# FASHION:
+#   fixed:
+#     arguments:
+#       input_dim: [1, 28, 28]
+#       output_dim: 10
+#       hidden_dim: [512]
+#       N: 60000
+
+# OMNIGLOT:
+#   fixed:
+#     arguments:
+#       input_dim: [1, 105, 105]
+#       output_dim: 1623
+#       hidden_dim: [512]
+#       N: 19456

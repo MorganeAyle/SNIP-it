@@ -64,7 +64,6 @@ def get_imagewoof_loaders(arguments):
 
 def get_mnist_loaders(arguments):
     transformers = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
-    test_transforms = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,)), transforms.ColorJitter()])
     train_set = datasets.MNIST(
         DATASET_PATH,
         train=True,
@@ -81,7 +80,9 @@ def get_mnist_loaders(arguments):
 
 
 def get_fashionmnist_loaders(arguments):
-    transformers = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.2860,), (0.3530,))])  # tensor(0.2860), tensor(0.3530)
+    transformers = transforms.Compose([transforms.ToTensor(),
+                                       transforms.Normalize((0.2860,), (0.3530,))
+                                       ])
     train_set = datasets.FashionMNIST(
         DATASET_PATH,
         train=True,
@@ -97,9 +98,58 @@ def get_fashionmnist_loaders(arguments):
     return load(arguments, test_set, train_set)
 
 
+def get_kmnist_loaders(arguments):
+    transformers = transforms.Compose([transforms.ToTensor(),
+                                       transforms.Normalize((0.1918,), (0.3483,))
+                                       ])
+    train_set = datasets.KMNIST(
+        DATASET_PATH,
+        train=True,
+        download=True,
+        transform=transformers
+    )
+    test_set = datasets.KMNIST(
+        DATASET_PATH,
+        train=False,
+        download=True,
+        transform=transformers
+    )
+    return load(arguments, test_set, train_set)
+
+
+def get_omniglot_loaders(arguments):
+    if arguments['preload_all_data']: raise NotImplementedError
+
+    train_loader = torch.utils.data.DataLoader(
+        datasets.Omniglot(DATASET_PATH, background=True, download=True,
+                          transform=transforms.Compose([
+                              transforms.ToTensor(),
+                              transforms.Normalize((0.92206,), (0.08426,))
+                          ])),
+        batch_size=arguments['batch_size'],
+        shuffle=True,
+        pin_memory=True,
+        num_workers=NUM_WORKERS
+    )
+
+    test_loader = torch.utils.data.DataLoader(
+        datasets.Omniglot(DATASET_PATH, background=False, download=True,
+                          transform=transforms.Compose([
+                              transforms.ToTensor(),
+                              transforms.Normalize((0.92206,), (0.08426,))
+                          ])),
+        batch_size=arguments['batch_size'],
+        shuffle=False,
+        pin_memory=True,
+        num_workers=NUM_WORKERS
+    )
+
+    return train_loader, test_loader
+
+
 def get_cifar10_loaders(arguments):
-    mean = [0.485, 0.456, 0.406]
-    std = [0.229, 0.224, 0.225]
+    mean = [0.485, 0.456, 0.406]  # avg 0.449
+    std = [0.229, 0.224, 0.225]  # avg 0.226
     test_transforms = transforms.Compose(
         [
             transforms.ToTensor(),
@@ -120,6 +170,25 @@ def get_cifar10_loaders(arguments):
     )
     train_set = datasets.CIFAR10(DATASET_PATH, train=True, download=True, transform=train_transforms)
     test_set = datasets.CIFAR10(DATASET_PATH, train=False, download=True, transform=test_transforms)
+    return load(arguments, test_set, train_set)
+
+
+def get_svhn_loaders(arguments):
+    transformers = transforms.Compose([transforms.ToTensor(),
+                                       transforms.Normalize((0.4377, 0.4438, 0.4728), (0.1980, 0.2010, 0.1970))
+                                       ])
+    train_set = datasets.SVHN(
+        DATASET_PATH,
+        split='train',
+        download=True,
+        transform=transformers
+    )
+    test_set = datasets.SVHN(
+        DATASET_PATH,
+        split='test',
+        download=True,
+        transform=transformers
+    )
     return load(arguments, test_set, train_set)
 
 
@@ -164,8 +233,8 @@ def load(arguments, test_set, train_set):
 def get_cifar100_loaders(arguments):
     if arguments['preload_all_data']: raise NotImplementedError
 
-    mean = [0.485, 0.456, 0.406]
-    std = [0.229, 0.224, 0.225]
+    mean = [0.5071, 0.4865, 0.4409]
+    std = [0.2673, 0.2564, 0.2762]
     train_loader = torch.utils.data.DataLoader(
         datasets.CIFAR100(DATASET_PATH, train=True, download=True,
                           transform=transforms.Compose([
@@ -188,37 +257,6 @@ def get_cifar100_loaders(arguments):
                                                                              std=std)
 
                                                         ])),
-        batch_size=arguments['batch_size'],
-        shuffle=True,
-        pin_memory=True,
-        num_workers=NUM_WORKERS
-    )
-
-    return train_loader, test_loader
-
-
-def get_omniglot_loaders(arguments):
-    if arguments['preload_all_data']: raise NotImplementedError
-
-    train_loader = torch.utils.data.DataLoader(
-        datasets.Omniglot(DATASET_PATH, background=True, download=True,
-                          transform=transforms.Compose([
-                              transforms.RandomAffine(10),
-                              transforms.ToTensor(),
-                              transforms.Normalize((0.1307,), (0.3081,))
-                          ])),
-        batch_size=arguments['batch_size'],
-        shuffle=True,
-        pin_memory=True,
-        num_workers=NUM_WORKERS
-    )
-
-    test_loader = torch.utils.data.DataLoader(
-        datasets.Omniglot(DATASET_PATH, background=False, download=True,
-                          transform=transforms.Compose([  # transforms.RandomCrop(70),
-                              transforms.ToTensor(),
-                              transforms.Normalize((0.1307,), (0.3081,))
-                          ])),
         batch_size=arguments['batch_size'],
         shuffle=True,
         pin_memory=True,
@@ -295,9 +333,9 @@ def get_rubbish_loaders(arguments=None):
 
 
 def get_gaussian_noise_loaders(arguments=None):
-    bs = 512
+    bs = arguments['batch_size']
     train_loader = torch.utils.data.DataLoader(
-        GaussianNoise(),
+        GaussianNoise(arguments, 60000),
         batch_size=bs,
         shuffle=True,
         pin_memory=True,
@@ -306,9 +344,32 @@ def get_gaussian_noise_loaders(arguments=None):
     )
 
     test_loader = torch.utils.data.DataLoader(
-        GaussianNoise(),
+        GaussianNoise(arguments, 10000),
+        batch_size=bs,
+        shuffle=False,
+        pin_memory=True,
+        num_workers=NUM_WORKERS
+
+    )
+
+    return train_loader, test_loader
+
+
+def get_oodomain_loaders(arguments=None):
+    bs = arguments['batch_size']
+    train_loader = torch.utils.data.DataLoader(
+        OODomain(arguments, 60000),
         batch_size=bs,
         shuffle=True,
+        pin_memory=True,
+        num_workers=NUM_WORKERS
+
+    )
+
+    test_loader = torch.utils.data.DataLoader(
+        OODomain(arguments, 10000),
+        batch_size=bs,
+        shuffle=False,
         pin_memory=True,
         num_workers=NUM_WORKERS
 
@@ -335,16 +396,34 @@ class RubbishSet(Dataset):
 
 class GaussianNoise(Dataset):
 
-    def __init__(self):
-        pass
+    def __init__(self, arguments, length):
+        self.args = arguments
+        self.length = length
 
     def __getitem__(self, item):
-        class_ = random.choice(range(10))
-        tensor = np.random.normal(0, 1, (1, 28, 28))
+        class_ = random.choice(range(self.args['output_dim']))
+        tensor = np.random.normal(0, 2, self.args['input_dim']).astype(float)
+
         return tensor, class_
 
     def __len__(self):
-        return 60000
+        return self.length
+
+
+class OODomain(Dataset):
+
+    def __init__(self, arguments, length):
+        self.args = arguments
+        self.length = length
+
+    def __getitem__(self, item):
+        class_ = random.choice(range(self.args['output_dim']))
+        tensor = np.random.randint(0, 255, self.args['input_dim']).astype(float)
+
+        return tensor, class_
+
+    def __len__(self):
+        return self.length
 
 
 class PersonalDataLoader:

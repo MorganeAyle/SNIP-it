@@ -13,6 +13,7 @@ from models.networks.assisting_layers.GateDecoratorLayers import GatedBatchNorm
 from utils.constants import SNIP_BATCH_ITERATIONS, RESULTS_DIR, OUTPUT_DIR
 from utils.data_utils import lookahead_type, lookahead_finished
 from utils.snip_utils import group_snip_forward_linear, group_snip_conv2d_forward
+from utils.attacks_utils import construct_adversarial_examples
 
 
 class SNAP(General):
@@ -33,6 +34,8 @@ class SNAP(General):
         raise NotImplementedError
 
     def prune(self, percentage, train_loader=None, manager=None, **kwargs):
+
+        from utils.constants import RESULTS_DIR
 
         all_scores, grads_abs, log10, norm_factor, vec_shapes = self.get_weight_saliencies(train_loader)
 
@@ -309,6 +312,14 @@ class SNAP(General):
         for i, (x, y) in enumerate(train_loader):
 
             if i == iterations: break
+
+            ####
+            # adv_results, _ = construct_adversarial_examples(x, y, 'FGSM', self.model,
+            #                                                 self.model.device, False, False,
+            #                                                 [1])
+            # _, x, _ = adv_results
+            # x = torch.cat(x)
+            ####
 
             inputs = x.to(self.model.device)
             targets = y.to(self.model.device)

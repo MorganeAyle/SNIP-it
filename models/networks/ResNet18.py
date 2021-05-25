@@ -5,6 +5,8 @@ from models.Pruneable import Pruneable
 from models.networks.assisting_layers.ResNetLayers import BasicBlock
 from utils.constants import PROD_SMALL_POOL, SMALL_POOL
 
+from _collections import OrderedDict
+
 
 class ResNet18(Pruneable):
 
@@ -60,17 +62,26 @@ class ResNet18(Pruneable):
         ).to(device)
 
     def forward(self, x):
+        self.activations = OrderedDict()
         x = self.conv1(x)
+        self.activations['conv1'] = x
         x = self.bn1(x)
+        self.activations['bn1'] = x
         x = self.relu(x)
         x = self.maxpool(x)
+        self.activations['maxpool'] = x
 
         x = self.layer1(x)
+        self.activations['layer1'] = x
         x = self.layer2(x)
+        self.activations['layer2'] = x
         x = self.layer3(x)
+        self.activations['layer3'] = x
         x = self.layer4(x)
+        self.activations['layer4'] = x
 
         x = self.avgpool(x)
+        self.activations['avgpool'] = x
         x = torch.flatten(x, 1)
         x = self.fc(x)
 
