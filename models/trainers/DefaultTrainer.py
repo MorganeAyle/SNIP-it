@@ -236,6 +236,7 @@ class DefaultTrainer:
                 self.out(f"\rEvaluating... {batch_num}/{len(self._test_loader)}", end='')
         self.out("\n")
 
+        self._model.eval()
         # validate on OOD data
         with torch.no_grad():
             for batch_num, batch in enumerate(self._ood_loader):
@@ -244,6 +245,7 @@ class DefaultTrainer:
                 ood_true = np.concatenate((ood_true, np.zeros(len(preds))))
                 ood_preds = np.concatenate((ood_preds, preds.reshape((-1))))
 
+        self._model.eval()
         # validate on adversarial attacks
         for batch_num, batch in enumerate(self._test_loader):
             im, crit = batch
