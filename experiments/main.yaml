@@ -22,11 +22,12 @@ fixed:
     eval_freq: 1000  # evaluate every n batches
     save_freq: 1e6  # save model every n epochs, besides before and after training
     batch_size: 64  # size of batches, for Imagenette 128
-    seed: 333  # random seed
+#    seed: 1234  # random seed
     max_training_minutes: 6120  # one hour and a 45 minutes max, process killed after n minutes (after finish of epoch)
     plot_weights_freq: 10  # plot pictures to tensorboard every n epochs
-    prune_freq: 4  # if pruning during training: how long to wait between pruning events after first pruning
-    prune_delay: 8   # "if pruning during training: how long to wait before pruning first time
+    prune_freq: 1  # if pruning during training: how long to wait between pruning events after first pruning
+    prune_delay: 0   # "if pruning during training: how long to wait before pruning first time
+    lower_limit: 0.5
     epochs: 80
     rewind_to: 0  # rewind to this epoch if rewinding is done
     hidden_dim: None
@@ -36,7 +37,7 @@ fixed:
     snip_steps: 5  # 's' in algorithm box, number of pruning steps for 'rule of thumb', TODO
     pruning_rate: 0.00  # pruning rate passed to criterion at pruning event. however, most override this
     growing_rate: 0.0000  # grow back so much every epoch (for future criterions)
-#    pruning_limit: 0.00  # Prune until here, if structured in nodes, if unstructured in weights. most criterions use this instead of the pruning_rate
+    pruning_limit: 0.0  # Prune until here, if structured in nodes, if unstructured in weights. most criterions use this instead of the pruning_rate
     prune_to: 5
     learning_rate: 2e-3
     grad_clip: 10
@@ -52,11 +53,12 @@ fixed:
     alpha: 1.0
 
     loss: CrossEntropy
+#    loss: HoyerSquare
     optimizer: ADAM
-    model: ResNet18  # ResNet not supported with structured
+    model: Conv6  # ResNet not supported with structured
     data_set: CIFAR10
     ood_data_set: SVHN
-    prune_criterion: EarlyJohn  # HoyerSquare is one shot, pruning limit doesn't matter in this implementation
+    prune_criterion: EmptyCrit  # HoyerSquare is one shot, pruning limit doesn't matter in this implementation
     train_scheme: DefaultTrainer  # default: DefaultTrainer
     attack: FGSM
     epsilon: 4
@@ -65,7 +67,7 @@ fixed:
     eval_epsilons: [4, 6, 12, 24, 48]
 
     device: cuda
-    results_dir: "ResNet18"
+    results_dir: "Conv6"
 
     checkpoint_name: None
     checkpoint_model: None
@@ -76,6 +78,7 @@ fixed:
     preload_all_data: 0  # load all data into ram memory for speedups
     tuning: 0  # splits trainset into train and validationset, omits test set
 
+    get_hooks: 0
     track_weights: 0  # "keep statistics on the weights through training
     disable_masking: 1  # disable the ability to prune unstructured
     enable_rewinding: 0  # enable the ability to rewind to previous weights
@@ -94,11 +97,11 @@ fixed:
     skip_first_plot: 0
     disable_activations: 0
 
-# hoyer_square:
-#   fixed:
-#     arguments:
-#       loss: "HoyerSquare"
-#       prune_criterion: "HoyerSquare"
+#hoyer_square:
+#  fixed:
+#    arguments:
+#      loss: "HoyerSquare"
+#      prune_criterion: "HoyerSquare"
 
 #MNIST:
 #  fixed:
@@ -118,16 +121,33 @@ CIFAR10:
 
 grid:
   arguments:
-    pruning_limit:
+    seed:
       type: choice
       options:
-        - 0.5
-        - 0.7
-        - 0.8
-        - 0.9
-        - 0.95
-        - 0.98
-        - 0.99
+        - 1234
+        - 2345
+        - 3456
+        - 4567
+        - 5678
+
+#    prune_criterion:
+#      type: choice
+#      options:
+#        - HoyerSquare
+#        - EmptyCrit
+
+#    pruning_limit:
+#      type: choice
+#      options:
+#        - 0.25
+#        - 0.5
+#        - 0.7
+#        - 0.8
+#        - 0.9
+#        - 0.95
+#        - 0.93
+#        - 0.98
+#        - 0.99
 
 #    train_scheme:
 #      type: choice

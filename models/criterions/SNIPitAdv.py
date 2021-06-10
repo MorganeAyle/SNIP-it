@@ -1,7 +1,7 @@
-from models.criterions.SNIP import SNIP
+from models.criterions.SNIPAdv import SNIPAdv
 
 
-class SNIPit(SNIP):
+class SNIPitAdv(SNIPAdv):
 
     """
     Original creation from our paper:  https://arxiv.org/abs/2006.00896
@@ -10,7 +10,7 @@ class SNIPit(SNIP):
 
     def __init__(self, *args, limit=0.0, steps=5, lower_limit=0.5, **kwargs):
         self.limit = limit
-        super(SNIPit, self).__init__(*args, **kwargs)
+        super(SNIPitAdv, self).__init__(*args, **kwargs)
         # always smaller than limit, steps+1 elements (including limit)
         self.steps = [limit - (limit - lower_limit) * (0.5 ** i) for i in range(steps + 1)] + [limit]
 

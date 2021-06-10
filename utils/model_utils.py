@@ -85,6 +85,10 @@ def save_models(models: List[nn.Module],
         DATA_MANAGER.save_python_obj(state,
                                      os.path.join(RESULTS_DIR, DATA_MANAGER.stamp, MODELS_DIR, modstr + suffix),
                                      print_success=False)
+        if not modstr.startswith('Metrics'):
+            DATA_MANAGER.save_python_obj(mod,
+                                         os.path.join(RESULTS_DIR, DATA_MANAGER.stamp, MODELS_DIR, modstr + 'mod_' + suffix),
+                                         print_success=False)
 
 
 def calculate_accuracy(targets, output, *ignored):

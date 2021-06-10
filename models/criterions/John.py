@@ -22,8 +22,13 @@ class John(SNIP):
     https://github.com/alecwangcq/GraSP
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, generative=False, img_size=28, nbins=2**5, channels=3, loss_f=None, *args, **kwargs):
         super(John, self).__init__(*args, **kwargs)
+        self.generative = generative
+        self.img_size = img_size
+        self.nbins = nbins
+        self.channels = channels
+        self.loss_f = loss_f
 
     def get_prune_indices(self, *args, **kwargs):
         raise NotImplementedError
@@ -231,8 +236,13 @@ class John(SNIP):
                 end = min(start + intv, N)
                 inputs_one.append(din[start:end])
                 targets_one.append(dtarget[start:end])
-                outputs = net.forward(inputs[start:end].to(device))  # divide by temperature to make it uniform
-                loss = F.cross_entropy(outputs, targets[start:end].to(device))
+                if not self.generative:
+                    outputs = net.forward(inputs[start:end].to(device))  # divide by temperature to make it uniform
+                    loss = F.cross_entropy(outputs, targets[start:end].to(device))
+                else:
+                    log_p, logdet, _ = net(inputs[start:end].to(device))
+                    logdet = logdet.mean()
+                    loss, _, _ = self.loss_f(log_p, logdet, self.img_size, self.nbins, channels=self.channels)
                 grad_w_p = autograd.grad(loss, weights, create_graph=False)
                 # grad_w_p = autograd.grad(outputs, weights, grad_outputs=torch.ones_like(outputs), create_graph=False)
                 if grad_w is None:
@@ -244,8 +254,13 @@ class John(SNIP):
         for it in range(len(inputs_one)):
             inputs = inputs_one.pop(0).to(device)
             targets = targets_one.pop(0).to(device)
-            outputs = net.forward(inputs)  # divide by temperature to make it uniform
-            loss = F.cross_entropy(outputs, targets)
+            if not self.generative:
+                outputs = net.forward(inputs)  # divide by temperature to make it uniform
+                loss = F.cross_entropy(outputs, targets)
+            else:
+                log_p, logdet, _ = net(inputs)
+                logdet = logdet.mean()
+                loss, _, _ = self.loss_f(log_p, logdet, self.img_size, self.nbins, channels=self.channels)
             grad_f = autograd.grad(loss, weights, create_graph=True)
             # grad_f = autograd.grad(outputs, weights, grad_outputs=torch.ones_like(outputs), create_graph=True)
             z = 0

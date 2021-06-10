@@ -8,7 +8,7 @@ from utils.constants import RESULTS_DIR, OUTPUT_DIR, SNIP_BATCH_ITERATIONS
 from utils.attacks_utils import construct_adversarial_examples
 
 
-class SNIP(General):
+class SNIPAdv(General):
     """
     Our interpretation/implementation of SNIP from the paper:
     SNIP: Single-shot Network Pruning based on Connection Sensitivity
@@ -18,7 +18,7 @@ class SNIP(General):
     """
 
     def __init__(self, *args, **kwargs):
-        super(SNIP, self).__init__(*args, **kwargs)
+        super(SNIPAdv, self).__init__(*args, **kwargs)
 
     def get_prune_indices(self, *args, **kwargs):
         raise NotImplementedError
@@ -34,9 +34,8 @@ class SNIP(General):
 
     def handle_pruning(self, all_scores, grads_abs, log10, manager, norm_factor, percentage):
         from utils.constants import RESULTS_DIR
-        if manager is not None:
-            manager.save_python_obj(all_scores.cpu().numpy(),
-                                    os.path.join(RESULTS_DIR, manager.stamp, OUTPUT_DIR, f"scores"))
+        manager.save_python_obj(all_scores.cpu().numpy(),
+                                os.path.join(RESULTS_DIR, manager.stamp, OUTPUT_DIR, f"scores"))
 
         # don't prune more or less than possible
         num_params_to_keep = int(len(all_scores) * (1 - percentage))
@@ -77,6 +76,13 @@ class SNIP(General):
         for i, (x, y) in enumerate(train_loader):
 
             if i == iterations: break
+
+            self.model.apply_weight_mask()
+            adv_results, _ = construct_adversarial_examples(x, y, 'FGSM', self.model,
+                                                            self.model.device, 16, False,
+                                                            False)
+            _, advs, _ = adv_results
+            x = advs.cpu()
 
             inputs = x.to(self.model.device)
             targets = y.to(self.model.device)

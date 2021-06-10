@@ -77,7 +77,8 @@ def main(
         start=0.5,
         steps=arguments['snip_steps'],
         device=arguments['device'],
-        arguments=arguments
+        arguments=arguments,
+        lower_limit=arguments['lower_limit']
     )
 
     # load pre-trained weights if specified
@@ -113,10 +114,9 @@ def main(
         weight_decay=arguments['l2_reg'] if not arguments['l0'] else 0
     )
 
-    run_name = f'_model={arguments["model"]}_dataset={arguments["data_set"]}_ood-dataset={arguments["ood_data_set"]}' + \
-               f'_attack={arguments["attack"]}_epsilon={arguments["epsilon"]}_prune-criterion={arguments["prune_criterion"]}' + \
+    run_name = f'_model={arguments["model"]}_dataset={arguments["data_set"]}_prune-criterion={arguments["prune_criterion"]}' + \
                f'_pruning-limit={arguments["pruning_limit"]}_prune-freq={arguments["prune_freq"]}_prune-delay={arguments["prune_delay"]}' + \
-               f'_outer-layer-pruning={arguments["outer_layer_pruning"]}' + \
+               f'_outer-layer-pruning={arguments["outer_layer_pruning"]}_prune-to={arguments["prune_to"]}' + \
                f'_rewind-to={arguments["rewind_to"]}_train-scheme={arguments["train_scheme"]}_seed={arguments["seed"]}'
 
     # build trainer

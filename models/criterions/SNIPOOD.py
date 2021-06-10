@@ -8,7 +8,7 @@ from utils.constants import RESULTS_DIR, OUTPUT_DIR, SNIP_BATCH_ITERATIONS
 from utils.attacks_utils import construct_adversarial_examples
 
 
-class SNIP(General):
+class SNIPOOD(General):
     """
     Our interpretation/implementation of SNIP from the paper:
     SNIP: Single-shot Network Pruning based on Connection Sensitivity
@@ -18,7 +18,7 @@ class SNIP(General):
     """
 
     def __init__(self, *args, **kwargs):
-        super(SNIP, self).__init__(*args, **kwargs)
+        super(SNIPOOD, self).__init__(*args, **kwargs)
 
     def get_prune_indices(self, *args, **kwargs):
         raise NotImplementedError
@@ -34,9 +34,8 @@ class SNIP(General):
 
     def handle_pruning(self, all_scores, grads_abs, log10, manager, norm_factor, percentage):
         from utils.constants import RESULTS_DIR
-        if manager is not None:
-            manager.save_python_obj(all_scores.cpu().numpy(),
-                                    os.path.join(RESULTS_DIR, manager.stamp, OUTPUT_DIR, f"scores"))
+        manager.save_python_obj(all_scores.cpu().numpy(),
+                                os.path.join(RESULTS_DIR, manager.stamp, OUTPUT_DIR, f"scores"))
 
         # don't prune more or less than possible
         num_params_to_keep = int(len(all_scores) * (1 - percentage))
@@ -83,6 +82,13 @@ class SNIP(General):
 
             outputs = net.forward(inputs)
             loss = F.nll_loss(outputs, targets) / iterations
+
+            ##
+            print("With ood loss")
+            ood_batch = next(iter(ood_loader))
+            outputs = net.forward(ood_batch[0].to(self.model.device))
+            loss -= F.nll_loss(outputs, targets) / iterations
+            ##
 
             loss.backward()
             loss_sum += loss.item()

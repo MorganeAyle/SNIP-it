@@ -3,13 +3,15 @@ import torch.nn.functional as F
 
 def linear_forward(self, x):
     return F.linear(x.float(),
-                    self.weight * self.gov.float(),
+                    self.weight.data * self.gov.float(),
+                    # self.gov.float(),
                     bias=self.bias.float())
 
 
 def conv_forward(self, x):
     return (F.conv2d(x,
-                     self.weight * self.gov.float(),
+                     self.weight.data * self.gov.float(),
+                     # self.gov.float(),
                      self.bias,
                      self.stride,
                      self.padding,

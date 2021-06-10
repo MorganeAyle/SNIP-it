@@ -86,17 +86,22 @@ STRUCTURED_SINGLE_SHOT = [
     "GateDecorators",
     "CNIP",
     "CNIPit",
+    "StructuredEFG",
+    "StructuredEFGit",
+    "EarlyStructuredEFGit"
 ]
 # single short can never be pruned during training because of condition in default trainer (is pruning time)
 SINGLE_SHOT = [
     "SNIP",
     "SNIPit",
+    "SNIPitAdv",
     "GRASP",
     "IterativeGRASP",
     "UnstructuredRandom",
     "EarlyJohn",
     "John",
-    "Johnit"
+    "Johnit",
+    "HYDRA"
 ]
 SINGLE_SHOT += STRUCTURED_SINGLE_SHOT
 # DURING_TRAINING are actually only used to know if need to re-initialize optimizer after pruning for structured
