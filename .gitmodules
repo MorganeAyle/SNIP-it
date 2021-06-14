@@ -1,3 +1,9 @@
 [submodule "lipEstimation"]
 	path = lipEstimation
 	url = https://github.com/avirmaux/lipEstimation.git
+[submodule "glow-pytorch"]
+	path = glow-pytorch
+	url = https://github.com/rosinality/glow-pytorch.git
+[submodule "PyTorch-BayesianCNN"]
+	path = PyTorch-BayesianCNN
+	url = https://github.com/kumar-shridhar/PyTorch-BayesianCNN.git
