@@ -11,7 +11,7 @@ slurm:
     gres: gpu:1       # num GPUs
     mem: 8G          # memory
     cpus-per-task: 1  # num cores
-    time: 0-02:00     # max time, D-HH:MM
+    time: 0-03:00     # max time, D-HH:MM
     partition: ['gpu_all']
 #    qos: cpu
 
