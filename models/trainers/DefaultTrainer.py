@@ -37,6 +37,7 @@ class DefaultTrainer:
                  train_loader: DataLoader,
                  test_loader: DataLoader,
                  ood_loader: DataLoader,
+                 ood_prune_loader: DataLoader,
                  metrics: Metrics,
                  criterion: GeneralModel,
                  run_name
@@ -45,6 +46,7 @@ class DefaultTrainer:
         self._test_loader = test_loader
         self._train_loader = train_loader
         self._ood_loader = ood_loader
+        self._ood_prune_loader = ood_prune_loader
         self._loss_function = loss
         self._model = model
         self._arguments = arguments
@@ -78,7 +80,8 @@ class DefaultTrainer:
     def _batch_iteration(self,
                          x: torch.Tensor,
                          y: torch.Tensor,
-                         train: bool = True):
+                         train: bool = True,
+                         return_acc: bool = True):
         """ one iteration of forward-backward """
 
         # unpack
@@ -94,7 +97,10 @@ class DefaultTrainer:
             start.record()
 
         # forward pass
-        accuracy, loss, out = self._forward_pass(x, y, train=train)
+        if return_acc:
+            accuracy, loss, out = self._forward_pass(x, y, train=train, return_acc=return_acc)
+        else:
+            loss, out = self._forward_pass(x, y, train=train, return_acc=return_acc)
 
         if self._arguments['prune_criterion'] == 'RigL':
             self._handle_pruning(self._metrics._epoch)
@@ -122,12 +128,16 @@ class DefaultTrainer:
         for tens in [out, y, x, loss, entropy, preds]:
             tens.detach()
 
-        return accuracy, loss.item(), time, entropy.detach().cpu(), preds.cpu()
+        if return_acc:
+            return accuracy, loss.item(), time, entropy.detach().cpu(), preds.cpu()
+        else:
+            return loss.item(), time, entropy.detach().cpu(), preds.cpu()
 
     def _forward_pass(self,
                       x: torch.Tensor,
                       y: torch.Tensor,
-                      train: bool = True):
+                      train: bool = True,
+                      return_acc: bool = True):
         """ implementation of a forward pass """
 
         if train:
@@ -143,8 +153,11 @@ class DefaultTrainer:
             model=self._model,
             criterion=self._criterion
         )
-        accuracy = self._get_accuracy(out, y)
-        return accuracy, loss, out
+        if return_acc:
+            accuracy = self._get_accuracy(out, y)
+            return accuracy, loss, out
+        else:
+            return loss, out
 
     def _backward_pass(self, loss):
         """ implementation of a backward pass """
@@ -243,7 +256,7 @@ class DefaultTrainer:
         # validate on OOD data
         with torch.no_grad():
             for batch_num, batch in enumerate(self._ood_loader):
-                _, _, _, entropy, preds = self._batch_iteration(*batch, self._model.training)
+                _, _, entropy, preds = self._batch_iteration(*batch, self._model.training, return_acc=False)
                 ood_cum_entropy.append(entropy)
                 ood_true = np.concatenate((ood_true, np.zeros(len(preds))))
                 ood_preds = np.concatenate((ood_preds, preds.reshape((-1))))
@@ -349,6 +362,8 @@ class DefaultTrainer:
             if self._arguments['prune_criterion'] in SINGLE_SHOT:
                 self._criterion.prune(self._arguments['pruning_limit'],
                                       train_loader=self._train_loader,
+                                      ood_loader=self._ood_prune_loader,
+                                      local=self._arguments['local_pruning'],
                                       manager=DATA_MANAGER)
                 # If structured, probably needs to re-initialize optimizer with new architecture
                 if self._arguments['prune_criterion'] in STRUCTURED_SINGLE_SHOT:
@@ -362,10 +377,8 @@ class DefaultTrainer:
                 # TODO do random pruning
                 pass
 
-
-            # with open('/nfs/homedirs/ayle/mask.pickle', 'wb') as f:
-            #     pickle.dump(self._model.mask, f)
-
+            # with open('/nfs/homedirs/ayle/model_conv6_0.5.pickle', 'wb') as f:
+            #     pickle.dump(self._model, f)
 
             # do training
             for epoch in range(epoch, self._arguments['epochs'] + epoch):

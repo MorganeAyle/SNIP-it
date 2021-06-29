@@ -186,6 +186,7 @@ class John(SNIP):
         net = self.model.eval()
 
         self.their_implementation(device, iterations, net, train_loader)
+        # self.their_implementation(device, iterations, net, ood_loader)
 
         # collect gradients
         grads = {}

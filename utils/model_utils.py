@@ -49,6 +49,7 @@ def _read_all_class_names():
     models[DATASETS]["SVHN"] = get_svhn_loaders
     models[DATASETS]["KMNIST"] = get_kmnist_loaders
     models[DATASETS]["OMNIGLOT"] = get_omniglot_loaders
+    models[DATASETS]["INV_OMNIGLOT"] = get_inverted_omniglot_loaders
     models[DATASETS]["OODOMAIN"] = get_oodomain_loaders
 
 

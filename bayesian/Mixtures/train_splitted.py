@@ -8,7 +8,7 @@ from torch import nn
 import numpy as np
 from torch.optim import Adam
 
-import utils
+import bayesian_utils as utils
 import metrics
 import config_mixtures as cfg
 import utils_mixture as mix_utils

@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 import data
-import utils
+import bayesian_utils as utils
 import metrics
 from main_bayesian import getModel as getBayesianModel
 from main_frequentist import getModel as getFrequentistModel

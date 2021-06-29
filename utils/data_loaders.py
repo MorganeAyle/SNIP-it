@@ -80,9 +80,17 @@ def get_mnist_loaders(arguments):
 
 
 def get_fashionmnist_loaders(arguments):
-    transformers = transforms.Compose([transforms.ToTensor(),
-                                       transforms.Normalize((0.2860,), (0.3530,))
-                                       ])
+    if arguments['input_dim'] != [1, 28, 28]:
+        transformers = transforms.Compose([
+            transforms.Resize(arguments['input_dim'][1:]),
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: x.repeat(arguments['input_dim'][0], 1, 1)),
+            transforms.Normalize((0.2860, 0.2860, 0.2860), (0.3530, 0.3530, 0.3530))
+        ])
+    else:
+        transformers = transforms.Compose([transforms.ToTensor(),
+                                           transforms.Normalize((0.2860,), (0.3530,))
+                                           ])
     train_set = datasets.FashionMNIST(
         DATASET_PATH,
         train=True,
@@ -147,30 +155,84 @@ def get_omniglot_loaders(arguments):
     return train_loader, test_loader
 
 
+def get_inverted_omniglot_loaders(arguments):
+    if arguments['preload_all_data']: raise NotImplementedError
+
+    train_loader = torch.utils.data.DataLoader(
+        datasets.Omniglot(DATASET_PATH, background=True, download=True,
+                          transform=transforms.Compose([
+                              transforms.ToTensor(),
+                              transforms.Lambda(lambda x: 1-x),
+                              transforms.Normalize((1-0.92206,), (0.08426,))
+                          ])),
+        batch_size=arguments['batch_size'],
+        shuffle=True,
+        pin_memory=True,
+        num_workers=NUM_WORKERS
+    )
+
+    test_loader = torch.utils.data.DataLoader(
+        datasets.Omniglot(DATASET_PATH, background=False, download=True,
+                          transform=transforms.Compose([
+                              transforms.ToTensor(),
+                              transforms.Lambda(lambda x: 1 - x),
+                              transforms.Normalize((1-0.92206,), (0.08426,))
+                          ])),
+        batch_size=arguments['batch_size'],
+        shuffle=False,
+        pin_memory=True,
+        num_workers=NUM_WORKERS
+    )
+
+    return train_loader, test_loader
+
+
 def get_cifar10_loaders(arguments):
-    mean = [0.485, 0.456, 0.406]  # avg 0.449
-    std = [0.229, 0.224, 0.225]  # avg 0.226
-    test_transforms = transforms.Compose(
+    mean = (0.4914, 0.4822, 0.4465)
+    std = (0.2471, 0.2435, 0.2616)
+    transform = transforms.Compose(
         [
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Normalize(mean=mean, std=std)
+            transforms.Normalize(mean, std),
         ]
     )
-    train_transforms = transforms.Compose(
-        (
-            [] if arguments['preload_all_data']
-            else [
-                transforms.RandomHorizontalFlip(p=FLIP_CHANCE),
-            ]
-        ) +
+    train_set = datasets.CIFAR10(DATASET_PATH, train=True, transform=transform)
+    transform = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Normalize(mean=mean, std=std)
+            transforms.Normalize(mean, std),
         ]
     )
-    train_set = datasets.CIFAR10(DATASET_PATH, train=True, download=True, transform=train_transforms)
-    test_set = datasets.CIFAR10(DATASET_PATH, train=False, download=True, transform=test_transforms)
+    test_set = datasets.CIFAR10(root=DATASET_PATH, train=False, transform=transform)
     return load(arguments, test_set, train_set)
+
+
+# def get_cifar10_loaders(arguments):
+#     mean = [0.485, 0.456, 0.406]  # avg 0.449
+#     std = [0.229, 0.224, 0.225]  # avg 0.226
+#     test_transforms = transforms.Compose(
+#         [
+#             transforms.ToTensor(),
+#             transforms.Normalize(mean=mean, std=std)
+#         ]
+#     )
+#     train_transforms = transforms.Compose(
+#         # (
+#         #     [] if arguments['preload_all_data']
+#         #     else [
+#         #         transforms.RandomHorizontalFlip(p=FLIP_CHANCE),
+#         #     ]
+#         # ) +
+#         [
+#             transforms.ToTensor(),
+#             transforms.Normalize(mean=mean, std=std)
+#         ]
+#     )
+#     train_set = datasets.CIFAR10(DATASET_PATH, train=True, download=True, transform=train_transforms)
+#     test_set = datasets.CIFAR10(DATASET_PATH, train=False, download=True, transform=test_transforms)
+#     return load(arguments, test_set, train_set)
 
 
 def get_svhn_loaders(arguments):

@@ -12,7 +12,7 @@ from ..misc import ModuleWrapper
 
 
 class BBBLinear(ModuleWrapper):
-    def __init__(self, in_features, out_features, bias=True, priors=None):
+    def __init__(self, in_features, out_features, bias=True, priors=None, structured=True):
         super(BBBLinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -30,6 +30,7 @@ class BBBLinear(ModuleWrapper):
         self.prior_sigma = priors['prior_sigma']
         self.posterior_mu_initial = priors['posterior_mu_initial']
         self.posterior_rho_initial = priors['posterior_rho_initial']
+        self.structured = structured
 
         self.W_mu = Parameter(torch.empty((out_features, in_features), device=self.device))
         self.W_rho = Parameter(torch.empty((out_features, in_features), device=self.device))
@@ -43,6 +44,14 @@ class BBBLinear(ModuleWrapper):
 
         self.reset_parameters()
 
+        # self.mask1 = torch.ones_like(self.W_mu)
+
+    def update_input_dim(self, dim):
+        self.in_features = dim
+
+    def update_output_dim(self, dim):
+        self.out_features = dim
+
     def reset_parameters(self):
         self.W_mu.data.normal_(*self.posterior_mu_initial)
         self.W_rho.data.normal_(*self.posterior_rho_initial)
@@ -55,7 +64,10 @@ class BBBLinear(ModuleWrapper):
         if self.training or sample:
             W_eps = torch.empty(self.W_mu.size()).normal_(0, 1).to(self.device)
             self.W_sigma = torch.log1p(torch.exp(self.W_rho))
-            weight = self.W_mu + W_eps * self.W_sigma
+            if self.structured:
+                weight = (self.W_mu + W_eps * self.W_sigma)
+            else:
+                weight = (self.W_mu + W_eps * self.W_sigma) * self.mask1
 
             if self.use_bias:
                 bias_eps = torch.empty(self.bias_mu.size()).normal_(0, 1).to(self.device)
@@ -64,7 +76,10 @@ class BBBLinear(ModuleWrapper):
             else:
                 bias = None
         else:
-            weight = self.W_mu
+            if self.structured:
+                weight = self.W_mu
+            else:
+                weight = self.W_mu * self.mask1
             bias = self.bias_mu if self.use_bias else None
 
         return F.linear(input, weight, bias)

@@ -7,7 +7,7 @@ import numpy as np
 from collections import OrderedDict
 
 import gmm
-import utils
+import bayesian_utils as utils
 import utils_mixture
 import config_bayesian as cfg
 

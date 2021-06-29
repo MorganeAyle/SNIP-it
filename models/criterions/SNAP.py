@@ -78,6 +78,10 @@ class SNAP(General):
             corresponding_module: nn.Module = \
                 [val for key, val in self.model.named_modules() if key == name.split(".weight")[0]][0]
 
+            print(name)
+            print(corresponding_module)
+            print(binary_keep_neuron_vector.shape)
+
             # ensure not disconnecting
             if binary_keep_neuron_vector.sum() == 0:
                 best_index = torch.argmax(grad)

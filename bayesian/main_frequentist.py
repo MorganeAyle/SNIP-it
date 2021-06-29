@@ -9,12 +9,12 @@ import torch.nn as nn
 from torch.optim import Adam, lr_scheduler
 
 import data
-import utils
+import bayesian_utils as utils
 import metrics
 import config_frequentist as cfg
-from models.NonBayesianModels.AlexNet import AlexNet
-from models.NonBayesianModels.LeNet import LeNet
-from models.NonBayesianModels.ThreeConvThreeFC import ThreeConvThreeFC
+from Models.NonBayesianModels.AlexNet import AlexNet
+from Models.NonBayesianModels.LeNet import LeNet
+from Models.NonBayesianModels.ThreeConvThreeFC import ThreeConvThreeFC
 
 # CUDA settings
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

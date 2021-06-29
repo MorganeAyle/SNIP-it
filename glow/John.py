@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from models.networks.assisting_layers.GateDecoratorLayers import GatedBatchNorm
 
-from models.criterions.SNIP import SNIP
+from glow.SNIP import SNIP
 from utils.constants import SNIP_BATCH_ITERATIONS
 from utils.data_utils import lookahead_type, lookahead_finished
 import numpy as np
@@ -213,13 +213,9 @@ class John(SNIP):
     def their_implementation(self, device, iterations, net, train_loader):
         net.zero_grad()
         weights = []
-        for name, module in net.named_modules():
-            if isinstance(module, nn.Conv2d):
-                weights.append(module.weight)
-            elif "invconv" in name:
-                weights.append(module.w_l)
-                weights.append(module.w_s)
-                weights.append(module.w_u)
+        for name, layer in net.named_modules():
+            if (isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear)) and ('prior' not in name):
+                weights.append(layer.weight)
         inputs_one = []
         targets_one = []
         grad_w = None
@@ -269,16 +265,9 @@ class John(SNIP):
             # grad_f = autograd.grad(outputs, weights, grad_outputs=torch.ones_like(outputs), create_graph=True)
             z = 0
             count = 0
-            for name, module in self.named_modules():
-                if isinstance(module, nn.Conv2d):
+            for name, layer in net.named_modules():
+                if (isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear)) and ('prior' not in name):
                     z += (grad_w[count] * grad_f[count] * self.model.mask[name + ".weight"]).sum()
-                    count += 1
-                elif "invconv" in name:
-                    z += (grad_w[count] * grad_f[count] * self.model.mask[name + ".weight.w_l"]).sum()
-                    count += 1
-                    z += (grad_w[count] * grad_f[count] * self.model.mask[name + ".weight.w_s"]).sum()
-                    count += 1
-                    z += (grad_w[count] * grad_f[count] * self.model.mask[name + ".weight.w_u"]).sum()
                     count += 1
             z.backward()
 

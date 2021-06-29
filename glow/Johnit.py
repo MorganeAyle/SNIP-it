@@ -1,4 +1,4 @@
-from models.criterions.John import John
+from glow.John import John
 
 
 class Johnit(John):
@@ -7,11 +7,15 @@ class Johnit(John):
     Implements SNIP-it (before training)
     """
 
-    def __init__(self, *args, limit=0.0, steps=10, lower_limit=0.5, **kwargs):
+    def __init__(self, *args, limit=0.0, steps=5, lower_limit=0.25, **kwargs):
         self.limit = limit
+        if self.limit > 0.5:
+            self.lower_limit = 0.5
+        else:
+            self.lower_limit = 0.25
         super(Johnit, self).__init__(*args, **kwargs)
-        self.steps = [limit - (limit - lower_limit) * (0.5 ** i) for i in range(steps + 1)] + [limit]
-        # self.steps = [0.5]
+        self.steps = [limit - (limit - self.lower_limit) * (0.5 ** i) for i in range(steps + 1)] + [limit]
+        # self.steps = [limit]
 
     def get_prune_indices(self, *args, **kwargs):
         raise NotImplementedError
@@ -21,6 +25,7 @@ class Johnit(John):
 
     def prune(self, percentage=0.0, *args, **kwargs):
         while len(self.steps) > 0:
+            print(self.steps)
             # determine k_i
             percentage = self.steps.pop(0)
 

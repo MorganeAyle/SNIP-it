@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-import utils
+import bayesian_utils as utils
 from models.BayesianModels.Bayesian3Conv3FC import BBB3Conv3FC
 from models.BayesianModels.BayesianAlexNet import BBBAlexNet
 from models.BayesianModels.BayesianLeNet import BBBLeNet

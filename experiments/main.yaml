@@ -11,7 +11,7 @@ slurm:
     gres: gpu:1       # num GPUs
     mem: 8G          # memory
     cpus-per-task: 1  # num cores
-    time: 0-03:00     # max time, D-HH:MM
+    time: 0-02:00     # max time, D-HH:MM
     partition: ['gpu_all']
 #    qos: cpu
 
@@ -22,7 +22,7 @@ fixed:
     eval_freq: 1000  # evaluate every n batches
     save_freq: 1e6  # save model every n epochs, besides before and after training
     batch_size: 64  # size of batches, for Imagenette 128
-#    seed: 1234  # random seed
+    seed: 1234  # random seed
     max_training_minutes: 6120  # one hour and a 45 minutes max, process killed after n minutes (after finish of epoch)
     plot_weights_freq: 10  # plot pictures to tensorboard every n epochs
     prune_freq: 1  # if pruning during training: how long to wait between pruning events after first pruning
@@ -37,8 +37,9 @@ fixed:
     snip_steps: 5  # 's' in algorithm box, number of pruning steps for 'rule of thumb', TODO
     pruning_rate: 0.00  # pruning rate passed to criterion at pruning event. however, most override this
     growing_rate: 0.0000  # grow back so much every epoch (for future criterions)
-    pruning_limit: 0.0  # Prune until here, if structured in nodes, if unstructured in weights. most criterions use this instead of the pruning_rate
-    prune_to: 5
+    pruning_limit: 0.98  # Prune until here, if structured in nodes, if unstructured in weights. most criterions use this instead of the pruning_rate
+    local_pruning: 0
+    prune_to: 10
     learning_rate: 2e-3
     grad_clip: 10
     grad_noise: 0  # added gaussian noise to gradients
@@ -55,9 +56,10 @@ fixed:
     loss: CrossEntropy
 #    loss: HoyerSquare
     optimizer: ADAM
-    model: Conv6  # ResNet not supported with structured
+    model: ResNet18  # ResNet not supported with structured
     data_set: CIFAR10
     ood_data_set: SVHN
+    ood_prune_data_set: SVHN
     prune_criterion: EmptyCrit  # HoyerSquare is one shot, pruning limit doesn't matter in this implementation
     train_scheme: DefaultTrainer  # default: DefaultTrainer
     attack: FGSM
@@ -67,7 +69,7 @@ fixed:
     eval_epsilons: [4, 6, 12, 24, 48]
 
     device: cuda
-    results_dir: "Conv6"
+    results_dir: "tests"
 
     checkpoint_name: None
     checkpoint_model: None
@@ -119,16 +121,16 @@ CIFAR10:
       hidden_dim: [512]
       N: 60000
 
-grid:
-  arguments:
-    seed:
-      type: choice
-      options:
-        - 1234
-        - 2345
-        - 3456
-        - 4567
-        - 5678
+#grid:
+#  arguments:
+#    seed:
+#      type: choice
+#      options:
+#        - 1234
+#        - 2345
+#        - 3456
+#        - 4567
+#        - 5678
 
 #    prune_criterion:
 #      type: choice

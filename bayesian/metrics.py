@@ -14,6 +14,16 @@ class ELBO(nn.Module):
         return F.nll_loss(input, target, reduction='mean') * self.train_size + beta * kl
 
 
+class ELBO2(nn.Module):
+    def __init__(self, train_size):
+        super(ELBO2, self).__init__()
+        self.train_size = train_size
+
+    def forward(self, input, target, log_prior, log_variational_posterior, beta):
+        assert not target.requires_grad
+        return F.nll_loss(input, target, reduction='mean') * self.train_size + (log_variational_posterior - log_prior)
+
+
 # def lr_linear(epoch_num, decay_start, total_epochs, start_value):
 #     if epoch_num < decay_start:
 #         return start_value

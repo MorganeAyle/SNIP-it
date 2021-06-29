@@ -1,5 +1,8 @@
 ############### Configuration file for bayesian ###############
-layer_type = 'lrt'  # 'bbb' or 'lrt'
+import math
+
+layer_type = 'bbb'  # 'bbb' or 'lrt' or 'mgp
+# layer_type = 'mgp'
 activation_type = 'relu'  # 'softplus' or 'relu'
 priors={
     'prior_mu': 0,
@@ -7,6 +10,16 @@ priors={
     'posterior_mu_initial': (0, 0.1),  # (mean, std) normal_
     'posterior_rho_initial': (-5, 0.1),  # (mean, std) normal_
 }
+
+# priors = {
+#     'prior_mu_1': 0,
+#     'prior_mu_2': 0,
+#     'prior_sigma_1': math.exp(-0),
+#     'prior_sigma_2': math.exp(-6),
+#     'posterior_mu_initial': (-0.2, 0.2),
+#     'posterior_rho_initial': (-5, -4),
+#     'pi': 0.5
+# }
 
 n_epochs = 200
 lr_start = 0.001

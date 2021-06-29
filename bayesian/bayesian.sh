@@ -18,4 +18,4 @@ squeue -j ${SLURM_JOBID} -O nodelist | tail -n +2
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate gr
 
-python main_bayesian.py --net_type conv6 --dataset CIFAR10
+python main_bayesian.py --net_type conv6_v2 --dataset CIFAR10

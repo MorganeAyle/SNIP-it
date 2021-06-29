@@ -74,7 +74,7 @@ def main(
         CRITERION_DIR, arguments['prune_criterion'],
         model=model,
         limit=arguments['pruning_limit'],
-        start=0.5,
+        start=arguments['lower_limit'],
         steps=arguments['snip_steps'],
         device=arguments['device'],
         arguments=arguments,
@@ -93,6 +93,12 @@ def main(
     # load OOD data
     _, ood_loader = find_right_model(
         DATASETS, arguments['ood_data_set'],
+        arguments=arguments
+    )
+
+    # load OOD prune data
+    _, ood_prune_loader = find_right_model(
+        DATASETS, arguments['ood_prune_data_set'],
         arguments=arguments
     )
 
@@ -130,6 +136,7 @@ def main(
         train_loader=train_loader,
         test_loader=test_loader,
         ood_loader=ood_loader,
+        ood_prune_loader=ood_prune_loader,
         metrics=metrics,
         criterion=criterion,
         run_name=run_name

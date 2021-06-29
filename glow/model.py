@@ -11,6 +11,7 @@ from scipy import linalg as la
 logabs = lambda x: torch.log(torch.abs(x))
 
 from glow.Pruneable import Pruneable
+# from models.Pruneable import Pruneable
 
 
 class ActNorm(nn.Module):
@@ -179,7 +180,7 @@ class AffineCoupling(nn.Module):
         self.net[2].bias.data.zero_()
 
     def forward(self, input):
-        in_a, in_b = input.chunk(2, 1)
+        in_a, in_b = input.chunk(2, 1)  # 2 chunks in dimension 1 (channel dimension)
 
         if self.affine:
             log_s, t = self.net(in_a).chunk(2, 1)

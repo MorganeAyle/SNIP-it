@@ -86,15 +86,6 @@ class Pruneable(GeneralModel):
                 else:
                     addition = module.weight.shape[0]
                 counter += addition
-            elif hasattr(module, "w_l"):
-                addition = module.w_l.shape[0]
-                counter += addition
-            elif hasattr(module, "w_s"):
-                addition = module.w_s.shape[0]
-                counter += addition
-            elif hasattr(module, "w_u"):
-                addition = module.w_u.shape[0]
-                counter += addition
         if self.l0:
             return counter
         else:
@@ -116,19 +107,9 @@ class Pruneable(GeneralModel):
             self.weight_count = self._get_weight_count()  # number of weights (excluding bias i think)
 
             if self.is_maskable:
-
-                self.mask = {}
-                for name, module in self.named_modules():
-                    if isinstance(module, nn.Conv2d):
-                        self.mask[name + ".weight"] = torch.ones_like(module.weight.data).to(self.device)
-                    elif "invconv" in name:
-                        self.mask[name + ".weight.w_l"] = torch.ones_like(module.w_l.data).to(self.device)
-                        self.mask[name + ".weight.w_s"] = torch.ones_like(module.w_s.data).to(self.device)
-                        self.mask[name + ".weight.w_u"] = torch.ones_like(module.w_u.data).to(self.device)
-
-                # self.mask = {name + ".weight": torch.ones_like(module.weight.data).to(self.device) for name, module in
-                #              self.named_modules() if isinstance(module, (nn.Linear, nn.Conv2d))
-                #              }
+                self.mask = {name + ".weight": torch.ones_like(module.weight.data).to(self.device) for name, module in
+                             self.named_modules() if (isinstance(module, (nn.Linear, nn.Conv2d)) and ('prior' not in name))
+                             }
 
                 if not self._outer_layer_pruning:
                     names = list(self.mask.keys())
@@ -173,13 +154,13 @@ class Pruneable(GeneralModel):
 
     def _get_weight_count(self):
         return sum([tens.flatten().size()[0] for name, tens in self.named_parameters() if
-                    'weight' in name])
+                    ('weight' in name) and ('prior' not in name)])
 
     def _clone_weights(self, weight_list_reference, bias=False):
 
         return {name: tens.data.detach().clone().to(self.device) for name, tens in
                 weight_list_reference if
-                ('weight' in name) or ("invconv" in name) or bias}
+                ('weight' in name) or bias}
 
     def save_rewind_weights(self):
         """ Saves the weights used to rewind to"""
@@ -342,7 +323,7 @@ class Pruneable(GeneralModel):
         else:
 
             for name, tensor in self.named_parameters():
-                if 'weight' in name:
+                if ('weight' in name) and ('prior' not in name):
 
                     if 'rho' in name:
                         total += torch.sum(tensor == ZERO_SIGMA).item()
