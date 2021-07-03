@@ -25,7 +25,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 parser = argparse.ArgumentParser(description="Glow trainer")
 parser.add_argument("--batch", default=16, type=int, help="batch size")
-parser.add_argument("--iter", default=100000, type=int, help="maximum iterations")
+parser.add_argument("--iter", default=70000, type=int, help="maximum iterations")
 parser.add_argument(
     "--n_flow", default=32, type=int, help="number of flows in each block"
 )
@@ -52,6 +52,7 @@ parser.add_argument("--pruning_limit", type=float, default=0.0)
 parser.add_argument("--local_pruning", action="store_true")
 
 parser.add_argument("--checkpoint", type=str, default="None")
+parser.add_argument("--optim_checkpoint", type=str, default="None")
 
 
 def sample_data(path, batch_size, image_size):
@@ -183,7 +184,7 @@ def train(args, model, optimizer, save_name):
                 f"Loss: {loss.item():.5f}; logP: {log_p.item():.5f}; logdet: {log_det.item():.5f}; lr: {warmup_lr:.7f}"
             )
 
-            loss_test.append(loss)
+            # loss_test.append(loss)
 
             if i % 100 == 0:
                 with torch.no_grad():
@@ -203,17 +204,17 @@ def train(args, model, optimizer, save_name):
                     optimizer.state_dict(), f"checkpoint/optim_{save_name}.pt"
                 )
 
-                if args.prune_criterion == 'EmptyCrit':
-                    stable_ind = adfuller(loss_test)[1]
-                    print("\nStability:", stable_ind)
-                    if stable_ind <= 0.01:
-                        torch.save(
-                            model.state_dict(), f"checkpoint/model_{save_name}_stable_{str(i + 1).zfill(6)}.pt"
-                        )
-                        torch.save(
-                            optimizer.state_dict(), f"checkpoint/optim_{save_name}_stable_{str(i + 1).zfill(6)}.pt"
-                        )
-                loss_test = []
+                # if args.prune_criterion == 'EmptyCrit':
+                #     stable_ind = adfuller(loss_test)[1]
+                #     print("\nStability:", stable_ind)
+                #     if stable_ind <= 0.01:
+                #         torch.save(
+                #             model.state_dict(), f"checkpoint/model_{save_name}_stable_{str(i + 1).zfill(6)}.pt"
+                #         )
+                #         torch.save(
+                #             optimizer.state_dict(), f"checkpoint/optim_{save_name}_stable_{str(i + 1).zfill(6)}.pt"
+                #         )
+                # loss_test = []
 
         torch.save(
             model.state_dict(), f"checkpoint/model_{save_name}.pt"
@@ -243,5 +244,9 @@ if __name__ == "__main__":
     save_name = f"dataset={data_name}_criterion={args.prune_criterion}_sparsity={args.pruning_limit}_local={args.local_pruning}"
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
+
+    if not args.optim_checkpoint == "None":
+        optimizer.load_state_dict(torch.load(args.optim_checkpoint))
+        print("Optimizer checkpoint loaded")
 
     train(args, model, optimizer, save_name)

@@ -152,7 +152,7 @@ def validate_model(net, criterion, validloader, num_ens=1, beta_type=0.1, epoch=
     return valid_loss / len(validloader), np.mean(accs), np.concatenate(all_max_probs)
 
 
-def run(dataset, net_type):
+def run(dataset, net_type, checkpoint='None', prune_criterion='EmptyCrit', pruning_limit=0.0, lower_limit=0.5, local_pruning=False):
     # Hyper Parameter settings
     layer_type = cfg.layer_type
     activation_type = cfg.activation_type
@@ -194,15 +194,14 @@ def run(dataset, net_type):
     #         count += 1
     #         print(module.mask.sum().float() / torch.numel(module.mask))
 
-
     ckpt_dir = f'checkpoints/{dataset}/bayesian'
-    ckpt_name = f'checkpoints/{dataset}/bayesian/model_{net_type}_{layer_type}_{activation_type}_{args.prune_criterion}_{args.pruning_limit}_during.pt'
+    ckpt_name = f'checkpoints/{dataset}/bayesian/model_{net_type}_{layer_type}_{activation_type}_{prune_criterion}_{pruning_limit}_during.pt'
 
     if not os.path.exists(ckpt_dir):
         os.makedirs(ckpt_dir, exist_ok=True)
 
-    if args.checkpoint != 'None':
-        net.load_state_dict(torch.load(args.checkpoint))
+    if checkpoint != 'None':
+        net.load_state_dict(torch.load(checkpoint))
 
     if layer_type == 'mgp':
         criterion = metrics.ELBO2(len(trainset)).to(device)
@@ -212,15 +211,18 @@ def run(dataset, net_type):
     lr_sched = lr_scheduler.ReduceLROnPlateau(optimizer, patience=6, verbose=True)
     valid_loss_max = np.Inf
 
-    if args.prune_criterion == 'SNIPit':
-        prune_criterion = SNIPit(limit=args.pruning_limit, model=net, lower_limit=args.lower_limit)
-        prune_criterion.prune(args.pruning_limit, train_loader=train_loader, local=args.local_pruning)
-    elif args.prune_criterion == 'SNR':
-        prune_criterion = SNR(limit=args.pruning_limit, model=net, lower_limit=args.lower_limit)
-        prune_criterion.prune(args.pruning_limit, train_loader=train_loader, local=args.local_pruning)
-    elif args.prune_criterion == 'StructuredSNR':
-        prune_criterion = StructuredSNR(limit=args.pruning_limit, model=net, lower_limit=args.lower_limit)
-        # prune_criterion.prune(args.pruning_limit, train_loader=train_loader, local=args.local_pruning)
+    if prune_criterion == 'SNIPit':
+        pruning_criterion = SNIPit(limit=pruning_limit, model=net, lower_limit=lower_limit)
+        pruning_criterion.prune(pruning_limit, train_loader=train_loader, local=local_pruning)
+    elif prune_criterion == 'SNR':
+        pruning_criterion = SNR(limit=pruning_limit, model=net, lower_limit=lower_limit)
+        pruning_criterion.prune(pruning_limit, train_loader=train_loader, local=local_pruning)
+    elif prune_criterion == 'StructuredSNR':
+        pruning_criterion = StructuredSNR(limit=pruning_limit, model=net, lower_limit=lower_limit)
+        # pruning_criterion.prune(pruning_limit, train_loader=train_loader, local=local_pruning)
+
+    init_num_params = sum([np.prod(x.shape) for name, x in net.named_parameters() if "W_mu" in name])
+    new_num_params = init_num_params
 
     for epoch in range(n_epochs):  # loop over the dataset multiple times
 
@@ -243,37 +245,29 @@ def run(dataset, net_type):
             valid_loss_max = valid_loss
 
         # if epoch == 0 or epoch == 1:
-        if (epoch % 40 == 0) and (epoch > 1) and (epoch < 200):
+        if (epoch % 40 == 0) and (epoch > 1) and (epoch < 200) and (1 - new_num_params / init_num_params) < pruning_limit:
             net.zero_grad()
             optimizer.zero_grad()
 
             with torch.no_grad():
-                prune_criterion.prune(args.pruning_limit, train_loader=train_loader, local=args.local_pruning)
-
-            for param in net.parameters():
-                print(param.shape)
+                pruning_criterion.prune(0.1, train_loader=train_loader, local=local_pruning)
 
             import pickle
             with open('testt', 'wb') as f:
                 pickle.dump(net, f)
 
-            del net
-            del optimizer
-            del criterion
-            del lr_sched
-
             with open('testt', 'rb') as f:
                 net = pickle.load(f).to(device)
-
-            for param in net.parameters():
-                print(param.shape)
 
             net.post_init_implementation()
             criterion = metrics.ELBO(len(trainset)).to(device)
             optimizer = Adam(net.parameters(), lr=lr_start)
             lr_sched = lr_scheduler.ReduceLROnPlateau(optimizer, patience=6, verbose=True)
             valid_loss_max = np.Inf
-            prune_criterion = StructuredSNR(limit=args.pruning_limit, model=net, lower_limit=args.lower_limit)
+            pruning_criterion = StructuredSNR(limit=pruning_limit, model=net, lower_limit=lower_limit)
+
+            new_num_params = sum([np.prod(x.shape) for name, x in net.named_parameters() if "W_mu" in name])
+            print('Overall sparsity', 1 - new_num_params / init_num_params)
 
     import pickle
     with open(ckpt_name, 'wb') as f:
@@ -294,4 +288,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    run(args.dataset, args.net_type)
+    run(args.dataset, args.net_type, args.checkpoint, args.prune_criterion, args.pruning_limit, args.lower_limit, args.local_pruning)

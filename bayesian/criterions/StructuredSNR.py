@@ -37,9 +37,9 @@ class StructuredSNR(General):
 
         all_scores, grads_abs, log10, norm_factor, vec_shapes = self.get_weight_saliencies(train_loader)
 
-        self.handle_pruning(all_scores, grads_abs, norm_factor, percentage)
+        self.handle_pruning(all_scores, grads_abs, norm_factor, percentage, vec_shapes)
 
-    def handle_pruning(self, all_scores, grads_abs, norm_factor, percentage):
+    def handle_pruning(self, all_scores, grads_abs, norm_factor, percentage, vec_shapes=None):
 
         summed_weights = sum([np.prod(x.shape) for name, x in self.model.named_parameters() if "W_mu" in name])
         num_nodes_to_keep = int(len(all_scores) * (1 - percentage))
@@ -57,7 +57,7 @@ class StructuredSNR(General):
 
         # prune
         summed_pruned = 0
-        toggle_row_column = False
+        toggle_row_column = False  # False means output
         cutoff = 0
         length_nonzero = 0
         grads_abs.keys()
@@ -86,6 +86,12 @@ class StructuredSNR(General):
                                                           name,
                                                           corresponding_weight_parameter,
                                                           corresponding_weight_parameter2)
+
+                if first and not toggle_row_column:
+                    print(name, "pruning percentage", 1 - binary_keep_neuron_vector.sum() / len(binary_keep_neuron_vector))
+                if last and toggle_row_column:
+                    print(name, "pruning percentage",
+                          1 - binary_keep_neuron_vector.sum() / len(binary_keep_neuron_vector))
             else:
 
                 cutoff, length_nonzero = self.handle_middle_layers(binary_keep_neuron_vector,
@@ -98,14 +104,9 @@ class StructuredSNR(General):
                                                                    corresponding_weight_parameter,
                                                                    corresponding_weight_parameter2)
 
-            cutoff, summed_pruned = self.print_layer_progress(cutoff,
-                                                              grads_abs,
-                                                              length_nonzero,
-                                                              name,
-                                                              summed_pruned,
-                                                              toggle_row_column,
-                                                              corresponding_weight_parameter,
-                                                              )
+                if not toggle_row_column:
+                    print(name, "pruning percentage", 1 - binary_keep_neuron_vector.sum() / len(binary_keep_neuron_vector))
+
             toggle_row_column = not toggle_row_column
 
         last = None
@@ -121,7 +122,7 @@ class StructuredSNR(General):
         for line in str(self.model).split("\n"):
             if "BatchNorm" in line or "Conv" in line or "Linear" in line or "AdaptiveAvg" in line or "Sequential" in line:
                 print(line)
-        print("final percentage after snap:", summed_pruned / summed_weights)
+        print("final percentage after snap:", 1 - sum([np.prod(x.shape) for name, x in self.model.named_parameters() if "W_mu" in name]) / summed_weights)
 
         # self.model.apply_weight_mask()
         self.cut_lonely_connections()
