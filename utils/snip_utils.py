@@ -1,4 +1,5 @@
 import torch.nn.functional as F
+import torch
 
 """
 assisting maskeable functions for the methods we introduced.
@@ -35,3 +36,13 @@ def group_snip_conv2d_forward(self, x):
                      self.dilation,
                      self.groups).permute(0, 3, 2, 1) * self.gov_out.float()).permute(0, 3, 2, 1)
 
+
+def group_snip_invconv2d_forward(self, x):
+    _, _, height, width = x.shape
+
+    weight = self.calc_weight()
+
+    out = (F.conv2d(x, weight).permute(0, 3, 2, 1) * self.gov_out.float()).permute(0, 3, 2, 1)
+    logdet = height * width * torch.sum(self.w_s)
+
+    return out, logdet

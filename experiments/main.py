@@ -19,6 +19,9 @@ from torch.utils.data.dataset import Dataset
 
 from torchvision import transforms
 
+from lipEstimation.lipschitz_utils import compute_module_input_sizes
+from lipEstimation.lipschitz_approximations import lipschitz_spectral_ub
+
 
 ex = Experiment()
 seml.setup_logger(ex)
@@ -147,7 +150,7 @@ def main(
     out(f"finishing at {get_date_stamp()}")
 
     results = {'train_acc': trainer.train_acc, 'test_acc': trainer.test_acc, 'sparsity': trainer.sparsity,
-               'filename': DATA_MANAGER.stamp}
+               'filename': DATA_MANAGER.stamp, 'cka': trainer.cka_mean}
 
     trainer._model.eval()
 
@@ -206,8 +209,8 @@ def main(
         def __init__(self, images, labels):
             self.images = images
             self.labels = labels
-            self.mean = [0.485, 0.456, 0.406]  # avg 0.449
-            self.std = [0.229, 0.224, 0.225]  # avg 0.226
+            self.mean = [0.4914, 0.4822, 0.4465]
+            self.std = [0.2471, 0.2435, 0.2616]
             self.transforms = transforms.Compose(
                 [
                     transforms.ToTensor(),
@@ -225,6 +228,12 @@ def main(
 
     with torch.no_grad():
         if arguments["data_set"] == "CIFAR10":
+            avg_acc = np.zeros(5)
+            avg_entropy = np.zeros(5)
+            avg_auroc = np.zeros(5)
+            avg_aupr = np.zeros(5)
+            avg_auroc_ent = np.zeros(5)
+            avg_aupr_ent = np.zeros(5)
             ds_path = os.path.join(DATASET_PATH, "cifar10_corrupted")
             for ds_dataset_name in os.listdir(ds_path):
                 npz_dataset = np.load(os.path.join(ds_path, ds_dataset_name))
@@ -250,8 +259,58 @@ def main(
                 )
                 res = tester.evaluate()
 
+                severity = int(ds_dataset_name.split('.')[0].split('_')[-1]) - 1
                 for key, value in res.items():
+                    if key.startswith('acc'):
+                        avg_acc[severity] += value
+                    elif key.startswith('auroc_entropy'):
+                        avg_auroc_ent[severity] += value
+                    elif key.startswith('aupr_entropy'):
+                        avg_aupr_ent[severity] += value
+                    elif key.startswith('auroc'):
+                        avg_auroc[severity] += value
+                    elif key.startswith('aupr'):
+                        avg_aupr[severity] += value
+                    elif key.startswith('entropy_'):
+                        avg_entropy[severity] += value
+
                     results[key] = value
+            avg_acc = avg_acc / 15
+            avg_auroc_ent = avg_auroc_ent / 15
+            avg_aupr_ent = avg_aupr_ent / 15
+            avg_auroc = avg_auroc / 15
+            avg_aupr = avg_aupr / 15
+            avg_entropy = avg_entropy / 15
+            for i in range(len(avg_acc)):
+                name = 'avg_acc_' + str(i + 1)
+                results[name] = avg_acc[i]
+            for i in range(len(avg_acc)):
+                name = 'avg_auroc_ent_' + str(i + 1)
+                results[name] = avg_auroc_ent[i]
+            for i in range(len(avg_acc)):
+                name = 'avg_aupr_ent_' + str(i + 1)
+                results[name] = avg_aupr_ent[i]
+            for i in range(len(avg_acc)):
+                name = 'avg_auroc_' + str(i + 1)
+                results[name] = avg_auroc[i]
+            for i in range(len(avg_acc)):
+                name = 'avg_aupr_' + str(i + 1)
+                results[name] = avg_aupr[i]
+            for i in range(len(avg_acc)):
+                name = 'avg_entropy_' + str(i + 1)
+                results[name] = avg_entropy[i]
+
+    # Don't compute gradient for the projector: speedup computations
+    for p in model.parameters():
+        p.requires_grad = False
+
+    # Compute input sizes for all modules of the model
+    for img, target in train_loader:
+        input_size = torch.unsqueeze(img[0], 0).size()
+        break
+    compute_module_input_sizes(model, input_size)
+    lip_spec = lipschitz_spectral_ub(model).data[0]
+    results['lip_spec'] = lip_spec
 
     return results
 

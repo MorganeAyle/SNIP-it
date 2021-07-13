@@ -6,6 +6,7 @@ import torch
 import torchvision
 from torch.utils.data.dataset import Dataset
 from torchvision import datasets, transforms
+import pickle
 
 from utils.constants import NUM_WORKERS, FLIP_CHANCE, DATASET_PATH, IMAGENETTE_DIR, TINY_IMAGNET_DIR, \
     IMAGEWOOF_DIR
@@ -397,7 +398,7 @@ def get_rubbish_loaders(arguments=None):
 def get_gaussian_noise_loaders(arguments=None):
     bs = arguments['batch_size']
     train_loader = torch.utils.data.DataLoader(
-        GaussianNoise(arguments, 60000),
+        GaussianNoise(arguments, train=True),
         batch_size=bs,
         shuffle=True,
         pin_memory=True,
@@ -406,7 +407,7 @@ def get_gaussian_noise_loaders(arguments=None):
     )
 
     test_loader = torch.utils.data.DataLoader(
-        GaussianNoise(arguments, 10000),
+        GaussianNoise(arguments, train=False),
         batch_size=bs,
         shuffle=False,
         pin_memory=True,
@@ -420,7 +421,7 @@ def get_gaussian_noise_loaders(arguments=None):
 def get_oodomain_loaders(arguments=None):
     bs = arguments['batch_size']
     train_loader = torch.utils.data.DataLoader(
-        OODomain(arguments, 60000),
+        OODomain(arguments, train=True),
         batch_size=bs,
         shuffle=True,
         pin_memory=True,
@@ -429,7 +430,7 @@ def get_oodomain_loaders(arguments=None):
     )
 
     test_loader = torch.utils.data.DataLoader(
-        OODomain(arguments, 10000),
+        OODomain(arguments, train=False),
         batch_size=bs,
         shuffle=False,
         pin_memory=True,
@@ -458,34 +459,77 @@ class RubbishSet(Dataset):
 
 class GaussianNoise(Dataset):
 
-    def __init__(self, arguments, length):
+    def __init__(self, arguments, train):
         self.args = arguments
-        self.length = length
+        self.train = train
+
+        if self.args['input_dim'] == [1, 28, 28] and self.args['output_dim'] == 10:
+            path = '/nfs/homedirs/ayle/guided-research/SNIP-it/gitignored/data/random_1x28x28x10'
+            self.reshape = [1, 1, 1]
+        elif self.args['input_dim'] == [3, 32, 32] and self.args['output_dim'] == 10:
+            path = '/nfs/homedirs/ayle/guided-research/SNIP-it/gitignored/data/random_3x32x32x10'
+            self.reshape = [3, 1, 1]
+        else:
+            raise NotImplementedError
+
+        with open(path, 'rb') as f:
+            dataset = pickle.load(f)
+
+        if self.train:
+            self.set = dataset['train_set']
+        else:
+            self.set = dataset['test_set']
+
+        self.mean = dataset['mean']
+        self.std = dataset['std']
 
     def __getitem__(self, item):
-        class_ = random.choice(range(self.args['output_dim']))
-        tensor = np.random.normal(0, 2, self.args['input_dim']).astype(float)
+        tensor, class_ = self.set[item]
+
+        tensor = (tensor - np.reshape(self.mean, self.reshape)) / np.reshape(self.std, self.reshape)
+        tensor = tensor.astype(float)
 
         return tensor, class_
 
     def __len__(self):
-        return self.length
+        return len(self.set)
 
 
 class OODomain(Dataset):
 
-    def __init__(self, arguments, length):
+    def __init__(self, arguments, train):
         self.args = arguments
-        self.length = length
+        self.train = train
+
+        if self.args['input_dim'] == [1, 28, 28] and self.args['output_dim'] == 10:
+            path = '/nfs/homedirs/ayle/guided-research/SNIP-it/gitignored/data/random_1x28x28x10'
+            self.reshape = [1, 1, 1]
+        elif self.args['input_dim'] == [3, 32, 32] and self.args['output_dim'] == 10:
+            path = '/nfs/homedirs/ayle/guided-research/SNIP-it/gitignored/data/random_3x32x32x10'
+            self.reshape = [3, 1, 1]
+        else:
+            raise NotImplementedError
+
+        with open(path, 'rb') as f:
+            dataset = pickle.load(f)
+
+        if self.train:
+            self.set = dataset['train_set']
+        else:
+            self.set = dataset['test_set']
+
+        self.mean = dataset['mean']
+        self.std = dataset['std']
 
     def __getitem__(self, item):
-        class_ = random.choice(range(self.args['output_dim']))
-        tensor = np.random.randint(0, 255, self.args['input_dim']).astype(float)
+        tensor, class_ = self.set[item]
+
+        tensor = tensor.astype(float)
 
         return tensor, class_
 
     def __len__(self):
-        return self.length
+        return len(self.set)
 
 
 class PersonalDataLoader:

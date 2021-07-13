@@ -12,7 +12,7 @@ from ..misc import ModuleWrapper
 
 
 class BBBLinear(ModuleWrapper):
-    def __init__(self, in_features, out_features, bias=True, priors=None, structured=True):
+    def __init__(self, in_features, out_features, bias=True, priors=None, structured=False):
         super(BBBLinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -44,7 +44,7 @@ class BBBLinear(ModuleWrapper):
 
         self.reset_parameters()
 
-        # self.mask1 = torch.ones_like(self.W_mu)
+        self.mask1 = torch.ones_like(self.W_mu)
 
     def update_input_dim(self, dim):
         self.in_features = dim
@@ -67,7 +67,7 @@ class BBBLinear(ModuleWrapper):
             if self.structured:
                 weight = (self.W_mu + W_eps * self.W_sigma)
             else:
-                weight = (self.W_mu + W_eps * self.W_sigma) * self.mask1
+                weight = (self.W_mu + W_eps * self.W_sigma) * self.mask1.to(self.device)
 
             if self.use_bias:
                 bias_eps = torch.empty(self.bias_mu.size()).normal_(0, 1).to(self.device)
@@ -79,7 +79,7 @@ class BBBLinear(ModuleWrapper):
             if self.structured:
                 weight = self.W_mu
             else:
-                weight = self.W_mu * self.mask1
+                weight = self.W_mu * self.mask1.to(self.device)
             bias = self.bias_mu if self.use_bias else None
 
         return F.linear(input, weight, bias)

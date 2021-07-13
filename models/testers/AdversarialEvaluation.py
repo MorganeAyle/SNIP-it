@@ -29,8 +29,8 @@ class AdversarialEvaluation:
         success_rates = []
         true_labels = np.zeros(0)
         all_preds = np.zeros(0)
-        entropies = []
-        ood_entropies = []
+        entropies = np.zeros(0)
+        ood_entropies = np.zeros(0)
         for im, crit in self.test_loader:
 
             # probs for indistribution
@@ -41,8 +41,8 @@ class AdversarialEvaluation:
             probs = F.softmax(out, dim=-1)
             preds, indices = torch.max(probs, dim=-1)
 
-            entropy = Categorical(probs).entropy().squeeze().mean()
-            entropies.append(entropy.detach().cpu().numpy())
+            entropy = Categorical(probs).entropy().squeeze()
+            entropies = np.concatenate((entropies, entropy.detach().cpu().numpy()))
 
             true_labels = np.concatenate((true_labels, np.ones(len(x))))
             all_preds = np.concatenate((all_preds, preds.detach().cpu().reshape((-1))))
@@ -71,8 +71,8 @@ class AdversarialEvaluation:
             probs = F.softmax(out, dim=-1)
             preds, indices = torch.max(probs, dim=-1)
 
-            entropy = Categorical(probs).entropy().squeeze().mean()
-            ood_entropies.append(entropy.detach().cpu().numpy())
+            entropy = Categorical(probs).entropy().squeeze()
+            ood_entropies = np.concatenate((ood_entropies, entropy.detach().cpu().numpy()))
 
             true_labels = np.concatenate((true_labels, np.zeros(len(x))))
             all_preds = np.concatenate((all_preds, preds.detach().cpu().reshape((-1))))
@@ -82,12 +82,19 @@ class AdversarialEvaluation:
         auroc = calculate_auroc(true_labels, all_preds)
         aupr = calculate_aupr(true_labels, all_preds)
 
+        auroc_entropy = calculate_auroc(1 - true_labels, np.concatenate((entropies, ood_entropies)))
+        aupr_entropy = calculate_aupr(1 - true_labels, np.concatenate((entropies, ood_entropies)))
+
         auroc_name = f'auroc_{self.method}_{epsilon}'
         aupr_name = f'aupr_{self.method}_{epsilon}'
+        auroc_ent_name = f'auroc_entropy_{self.method}_{epsilon}'
+        aupr_ent_name = f'aupr_entropy_{self.method}_{epsilon}'
         entropy_name = f'entropy_{self.method}_{epsilon}'
 
         return {success_name: np.mean(success_rates),
                 auroc_name: auroc,
                 aupr_name: aupr,
-                entropy_name: np.mean(ood_entropies)
+                entropy_name: np.mean(ood_entropies),
+                auroc_ent_name: auroc_entropy,
+                aupr_ent_name: aupr_entropy
                 }

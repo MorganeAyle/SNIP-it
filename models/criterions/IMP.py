@@ -11,12 +11,17 @@ class IMP(General):
     https://arxiv.org/abs/1903.01611
     """
 
-    def __init__(self, *args, limit=0.0, steps=5, **kwargs):
+    def __init__(self, *args, limit=0.0, steps=5, lower_limit=0.5, **kwargs):
         self.limit = limit
         super(IMP, self).__init__(*args, **kwargs)
 
+        if limit > 0.5:
+            lower_limit = 0.5
+        else:
+            lower_limit = 0.2
+
         # define the k_i steps
-        self.steps = [limit - (limit - 0.5) * (0.5 ** i) for i in range(steps + 1)] + [limit]
+        self.steps = [limit - (limit - lower_limit) * (0.5 ** i) for i in range(steps + 1)] + [limit]
         self.global_pruning = True
 
     def get_prune_indices(self, *args, **kwargs):

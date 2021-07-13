@@ -21,7 +21,7 @@ priors={
 #     'pi': 0.5
 # }
 
-n_epochs = 200
+n_epochs = 0
 lr_start = 0.001
 num_workers = 4
 valid_size = 0.2

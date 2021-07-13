@@ -3,21 +3,19 @@ sys.path.append('..')
 
 from tqdm import tqdm
 import numpy as np
-from PIL import Image
-from math import log, sqrt, pi
+from math import log, sqrt
 
 import argparse
 
 import torch
 from torch import nn, optim
-from torch.autograd import Variable, grad
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, utils
 
-from model import Glow, InvConv2d, InvConv2dLU, ZeroConv2d
+from model import Glow, InvConv2dLU, ZeroConv2d
 
 from glow.Johnit import Johnit
-from glow.StructuredEFGit import StructuredEFGit
+from glow.criterions.StructuredEFGit import StructuredEFGit
 
 from statsmodels.tsa.stattools import adfuller
 
@@ -25,7 +23,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 parser = argparse.ArgumentParser(description="Glow trainer")
 parser.add_argument("--batch", default=16, type=int, help="batch size")
-parser.add_argument("--iter", default=70000, type=int, help="maximum iterations")
+parser.add_argument("--iter", default=200000, type=int, help="maximum iterations")
 parser.add_argument(
     "--n_flow", default=32, type=int, help="number of flows in each block"
 )
@@ -53,6 +51,36 @@ parser.add_argument("--local_pruning", action="store_true")
 
 parser.add_argument("--checkpoint", type=str, default="None")
 parser.add_argument("--optim_checkpoint", type=str, default="None")
+
+
+def get_celeba_loaders(path, batch_size, image_size):
+    transform = transforms.Compose(
+        [
+            transforms.Resize(image_size),
+            transforms.CenterCrop(image_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+        ]
+    )
+    train_set = datasets.CelebA(
+        path,
+        split='train',
+        download=True,
+        transform=transform
+    )
+    loader = DataLoader(train_set, shuffle=True, batch_size=batch_size, num_workers=4)
+    loader = iter(loader)
+
+    while True:
+        try:
+            yield next(loader)
+
+        except StopIteration:
+            loader = DataLoader(
+                train_set, shuffle=True, batch_size=batch_size, num_workers=4
+            )
+            loader = iter(loader)
+            yield next(loader)
 
 
 def sample_data(path, batch_size, image_size):
@@ -111,8 +139,18 @@ def calc_loss(log_p, logdet, image_size, n_bins, channels):
 
 
 def train(args, model, optimizer, save_name):
-    dataset = iter(sample_data(args.path, args.batch, args.img_size))
-    len_dataset = len(datasets.ImageFolder(args.path))
+    if args.path == 'CELEBA':
+        dataset = iter(get_celeba_loaders('/nfs/homedirs/ayle/guided-research/SNIPit/gitignored/data/', args.batch, args.img_size))
+        len_dataset = len(datasets.CelebA(
+            '/nfs/homedirs/ayle/guided-research/SNIPit/gitignored/data/',
+            split='train',
+            download=True
+        ))
+        print(len_dataset)
+
+    else:
+        dataset = iter(sample_data(args.path, args.batch, args.img_size))
+        len_dataset = len(datasets.ImageFolder(args.path))
     n_bins = 2.0 ** args.n_bits
 
     if args.prune_criterion == 'Johnit':
@@ -196,7 +234,7 @@ def train(args, model, optimizer, save_name):
                         range=(-0.5, 0.5),
                     )
 
-            if i % (len_dataset / args.batch) == 0:
+            if i % (len_dataset / 10000) == 0:
                 torch.save(
                     model.state_dict(), f"checkpoint/model_{save_name}.pt"
                 )

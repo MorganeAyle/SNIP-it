@@ -28,8 +28,8 @@ class OODEvaluation:
         all_preds = np.zeros(0)
         conf_true_labels = np.zeros(0)
         brier_scores = []
-        entropies = []
-        ood_entropies = []
+        entropies = np.zeros(0)
+        ood_entropies = np.zeros(0)
 
         with torch.no_grad():
             for batch_num, batch in enumerate(self.test_loader):
@@ -41,8 +41,9 @@ class OODEvaluation:
                 probs = F.softmax(out, dim=-1)
                 preds, indices = torch.max(probs, dim=-1)
 
-                entropy = Categorical(probs).entropy().squeeze().mean()
-                entropies.append(entropy.cpu().numpy())
+                entropy = Categorical(probs).entropy().squeeze()
+                entropies = np.concatenate((entropies, entropy.cpu().numpy()))
+                # entropies.append(entropy.cpu().numpy())
 
                 brier_scores.append(calculate_brier_score(probs, y))
 
@@ -64,8 +65,8 @@ class OODEvaluation:
                 probs = F.softmax(out, dim=-1)
                 preds, _ = torch.max(probs, dim=-1)
 
-                entropy = Categorical(probs).entropy().squeeze().mean()
-                ood_entropies.append(entropy.cpu().numpy())
+                entropy = Categorical(probs).entropy().squeeze()
+                ood_entropies = np.concatenate((ood_entropies, entropy.cpu().numpy()))
 
                 true_labels = np.concatenate((true_labels, np.zeros(len(x))))
                 all_preds = np.concatenate((all_preds, preds.cpu().reshape((-1))))
@@ -73,8 +74,13 @@ class OODEvaluation:
         auroc = calculate_auroc(true_labels, all_preds)
         aupr = calculate_aupr(true_labels, all_preds)
 
+        auroc_entropy = calculate_auroc(1 - true_labels, np.concatenate((entropies, ood_entropies)))
+        aupr_entropy = calculate_aupr(1 - true_labels, np.concatenate((entropies, ood_entropies)))
+
         auroc_name = f'auroc_{self.ood_dataset}'
         aupr_name = f'aupr_{self.ood_dataset}'
+        auroc_ent_name = f'auroc_entropy_{self.ood_dataset}'
+        aupr_ent_name = f'aupr_entropy_{self.ood_dataset}'
         entropy_name = f'entropy_{self.ood_dataset}'
 
         return {'conf_auroc': conf_auroc,
@@ -83,4 +89,7 @@ class OODEvaluation:
                 'entropy': np.mean(entropies),
                 auroc_name: auroc,
                 aupr_name: aupr,
-                entropy_name: np.mean(ood_entropies)}
+                entropy_name: np.mean(ood_entropies),
+                auroc_ent_name: auroc_entropy,
+                aupr_ent_name: aupr_entropy
+                }

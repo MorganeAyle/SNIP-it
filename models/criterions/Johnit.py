@@ -10,6 +10,10 @@ class Johnit(John):
     def __init__(self, *args, limit=0.0, steps=10, lower_limit=0.5, **kwargs):
         self.limit = limit
         super(Johnit, self).__init__(*args, **kwargs)
+        if limit > 0.5:
+            lower_limit = 0.5
+        else:
+            lower_limit = 0.2
         self.steps = [limit - (limit - lower_limit) * (0.5 ** i) for i in range(steps + 1)] + [limit]
         # self.steps = [limit]
 

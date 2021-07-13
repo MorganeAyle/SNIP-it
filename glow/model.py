@@ -11,15 +11,17 @@ from scipy import linalg as la
 logabs = lambda x: torch.log(torch.abs(x))
 
 from glow.Pruneable import Pruneable
-# from models.Pruneable import Pruneable
+from models.networks.assisting_layers.ContainerLayers import ContainerConv2d
 
 
 class ActNorm(nn.Module):
     def __init__(self, in_channel, logdet=True):
         super().__init__()
 
-        self.loc = nn.Parameter(torch.zeros(1, in_channel, 1, 1))
-        self.scale = nn.Parameter(torch.ones(1, in_channel, 1, 1))
+        self.in_channel = in_channel
+
+        self.loc = nn.Parameter(torch.zeros(1, self.in_channel, 1, 1))
+        self.scale = nn.Parameter(torch.ones(1, self.in_channel, 1, 1))
 
         self.register_buffer("initialized", torch.tensor(0, dtype=torch.uint8))
         self.logdet = logdet
@@ -64,6 +66,9 @@ class ActNorm(nn.Module):
 
     def reverse(self, output):
         return output / self.scale - self.loc
+
+    def update_input_dim(self, dim):
+        self.in_channel = dim
 
 
 class InvConv2d(nn.Module):
@@ -146,7 +151,7 @@ class ZeroConv2d(nn.Module):
     def __init__(self, in_channel, out_channel, padding=1):
         super().__init__()
 
-        self.conv = nn.Conv2d(in_channel, out_channel, 3, padding=0)
+        self.conv = ContainerConv2d(in_channel, out_channel, 3, padding=0)
         self.conv.weight.data.zero_()
         self.conv.bias.data.zero_()
         self.scale = nn.Parameter(torch.zeros(1, out_channel, 1, 1))
@@ -166,9 +171,9 @@ class AffineCoupling(nn.Module):
         self.affine = affine
 
         self.net = nn.Sequential(
-            nn.Conv2d(in_channel // 2, filter_size, 3, padding=1),
+            ContainerConv2d(in_channel // 2, filter_size, 3, padding=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(filter_size, filter_size, 1),
+            ContainerConv2d(filter_size, filter_size, 1),
             nn.ReLU(inplace=True),
             ZeroConv2d(filter_size, in_channel if self.affine else in_channel // 2),
         )
@@ -342,7 +347,7 @@ class Glow(Pruneable):
     def __init__(
         self, in_channel, n_flow, n_block, affine=True, conv_lu=True
     ):
-        super().__init__()
+        super().__init__(outer_layer_pruning=True)
 
         self.blocks = nn.ModuleList()
         n_channel = in_channel

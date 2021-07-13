@@ -13,6 +13,10 @@ class StructuredEFGit(StructuredEFG):
         self.limit = limit
         super(StructuredEFGit, self).__init__(*args, **kwargs)
         print('START', start)
+        if limit > 0.5:
+            start = 0.5
+        else:
+            start = 0.2
         self.steps = [limit - (limit - start) * (0.5 ** i) for i in range(steps + 1)] + [limit]
         self.left = 1.0
         self.pruned = 0.0

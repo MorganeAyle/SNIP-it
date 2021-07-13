@@ -1,93 +1,145 @@
 import torch.nn as nn
 
-"""
-assisting layers
-"""
 
 class BasicBlock(nn.Module):
+    """Basic Block for resnet 18 and resnet 34
+    """
+    # BasicBlock and BottleNeck block
+    # have different output size
+    # we use class attribute expansion
+    # to distinct
     expansion = 1
 
-    def __init__(self,
-                 input_dim=1,
-                 output_dim=1,
-                 downsample=False,
-                 groups=1,
-                 base_width=64,
-                 padding=1,
-                 norm_layer=nn.BatchNorm2d,
-                 conv_layer=nn.Conv2d):
-        super(BasicBlock, self).__init__()
-
-        self._check_input(base_width, groups, padding)
-
-        leak = 0.05
-        gain = nn.init.calculate_gain('leaky_relu', leak)
-
-        # Both self.conv1 and self.downsample layers downsample the input when stride != 1
-        self.conv1 = conv_layer(input_dim, output_dim,
-                                kernel_size=3,
-                                stride=2 if downsample else 1,
-                                padding=padding,
-                                groups=groups,
-                                bias=True,
-                                dilation=padding,
-                                gain=gain)
-        self.bn1 = norm_layer(output_dim,
-                              eps=1e-05,
-                              momentum=0.1,
-                              affine=True,
-                              track_running_stats=True)
-        self.relu = nn.LeakyReLU(leak, inplace=True)
-        self.conv2 = conv_layer(output_dim, output_dim,
-                                kernel_size=3,
-                                stride=1,
-                                padding=padding,
-                                groups=groups,
-                                bias=True,
-                                dilation=padding,
-                                gain=gain)
-
-        self.bn2 = norm_layer(output_dim,
-                              eps=1e-05,
-                              momentum=0.1,
-                              affine=True,
-                              track_running_stats=True)
-        if downsample:
-            downsample = nn.Sequential(
-                conv_layer(input_dim, output_dim,
-                           kernel_size=1,
-                           stride=2,
-                           bias=False,
-                           gain=gain),
-                norm_layer(output_dim,
-                           eps=1e-05,
-                           momentum=0.1,
-                           affine=True,
-                           track_running_stats=True)
+    def __init__(self, in_channels, out_channels, stride=1):
+        super().__init__()
+        # residual function
+        self.residual_function = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.LeakyReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels * BasicBlock.expansion, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels * BasicBlock.expansion)
+        )
+        # shortcut
+        self.shortcut = nn.Sequential()
+        # the shortcut output dimension is not the same with residual function
+        # use 1*1 convolution to match the dimension
+        if stride != 1 or in_channels != BasicBlock.expansion * out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels * BasicBlock.expansion, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels * BasicBlock.expansion)
             )
-        self.downsample = downsample
-        self.stride = 2 if downsample else 1
-
-    def _check_input(self, base_width, groups, padding):
-        if groups != 1 or base_width != 64:
-            raise ValueError('BasicBlock only supports groups=1 and base_width=64')
-        if padding > 1:
-            raise NotImplementedError("Dilation > 1 not supported in BasicBlock")
 
     def forward(self, x):
-        identity = x
+        return nn.LeakyReLU(inplace=True)(self.residual_function(x) + self.shortcut(x))
 
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
 
-        out = self.conv2(out)
-        out = self.bn2(out)
+class BottleNeck(nn.Module):
+    """Residual block for resnet over 50 layers
+    """
+    expansion = 2
 
-        if self.downsample is not False:
-            identity = self.downsample(x)
+    def __init__(self, in_channels, out_channels, stride=1):
+        super().__init__()
+        self.residual_function = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.LeakyReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, stride=stride, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.LeakyReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels * BottleNeck.expansion, kernel_size=1, bias=False),
+            nn.BatchNorm2d(out_channels * BottleNeck.expansion),
+        )
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_channels != out_channels * BottleNeck.expansion:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels * BottleNeck.expansion, stride=stride, kernel_size=1, bias=False),
+                nn.BatchNorm2d(out_channels * BottleNeck.expansion)
+            )
 
-        out += identity
-        out = self.relu(out)
+    def forward(self, x):
+        return nn.LeakyReLU(inplace=True)(self.residual_function(x) + self.shortcut(x))
 
-        return out
+
+class ResNet(nn.Module):
+    def __init__(self, block, num_block, num_classes=100):
+        super().__init__()
+        self.in_channels = 64
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(inplace=True))
+        # we use a different inputsize than the original paper
+        # so conv2_x's stride is 1
+        self.conv2_x = self._make_layer(block, 64, num_block[0], 1)
+        self.conv3_x = self._make_layer(block, 128, num_block[1], 2)
+        self.conv4_x = self._make_layer(block, 256, num_block[2], 2)
+        self.conv5_x = self._make_layer(block, 512, num_block[3], 2)
+        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.dropout = nn.Dropout(0.5)
+        self.fc = nn.Linear(512 * block.expansion, num_classes)
+
+    def _make_layer(self, block, out_channels, num_blocks, stride):
+        """make resnet layers(by layer i didnt mean this 'layer' was the
+        same as a neuron netowork layer, ex. conv layer), one layer may
+        contain more than one residual block
+        Args:
+            block: block type, basic block or bottle neck block
+            out_channels: output depth channel number of this layer
+            num_blocks: how many blocks per layer
+            stride: the stride of the first block of this layer
+        Return:
+            return a resnet layer
+        """
+        # we have num_block blocks per layer, the first block
+        # could be 1 or 2, other blocks would always be 1
+        strides = [stride] + [1] * (num_blocks - 1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.in_channels, out_channels, stride))
+            self.in_channels = out_channels * block.expansion
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        output = self.conv1(x)
+        output = self.conv2_x(output)
+        output = self.conv3_x(output)
+        output = self.conv4_x(output)
+        output = self.conv5_x(output)
+        output = self.avg_pool(output)
+        output = self.dropout(output)
+        output = output.view(output.size(0), -1)
+        output = self.fc(output)
+        return output
+
+
+def resnet18():
+    """ return a ResNet 18 object
+    """
+    return ResNet(BasicBlock, [2, 2, 2, 2])
+
+
+def resnet34():
+    """ return a ResNet 34 object
+    """
+    return ResNet(BasicBlock, [3, 4, 6, 3])
+
+
+def resnet50():
+    """ return a ResNet 50 object
+    """
+    return ResNet(BottleNeck, [3, 4, 6, 3])
+
+
+def resnet101():
+    """ return a ResNet 101 object
+    """
+    return ResNet(BottleNeck, [3, 4, 23, 3])
+
+
+def resnet152():
+    """ return a ResNet 152 object
+    """
+    return ResNet(BottleNeck, [3, 8, 36, 3])
+

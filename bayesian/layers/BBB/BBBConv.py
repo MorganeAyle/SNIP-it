@@ -13,7 +13,7 @@ from ..misc import ModuleWrapper
 
 class BBBConv2d(ModuleWrapper):
     def __init__(self, in_channels, out_channels, kernel_size,
-                 stride=1, padding=0, dilation=1, bias=True, priors=None, structured=True):
+                 stride=1, padding=0, dilation=1, bias=True, priors=None, structured=False):
 
         super(BBBConv2d, self).__init__()
         self.in_channels = in_channels
@@ -51,7 +51,7 @@ class BBBConv2d(ModuleWrapper):
 
         self.reset_parameters()
 
-        # self.mask1 = torch.ones_like(self.W_mu)
+        self.mask1 = torch.ones_like(self.W_mu)
 
     def update_input_dim(self, dim):
         self.in_channels = dim
@@ -74,7 +74,7 @@ class BBBConv2d(ModuleWrapper):
             if self.structured:
                 weight = (self.W_mu + W_eps * self.W_sigma)
             else:
-                weight = (self.W_mu + W_eps * self.W_sigma) * self.mask1
+                weight = (self.W_mu + W_eps * self.W_sigma) * self.mask1.to(self.device)
 
             if self.use_bias:
                 bias_eps = torch.empty(self.bias_mu.size()).normal_(0, 1).to(self.device)
@@ -86,7 +86,7 @@ class BBBConv2d(ModuleWrapper):
             if self.structured:
                 weight = self.W_mu
             else:
-                weight = self.W_mu * self.mask1
+                weight = self.W_mu * self.mask1.to(self.device)
             bias = self.bias_mu if self.use_bias else None
 
         return F.conv2d(input, weight, bias, self.stride, self.padding, self.dilation, self.groups)

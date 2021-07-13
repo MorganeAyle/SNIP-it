@@ -21,15 +21,15 @@ fixed:
   arguments:
     eval_freq: 1000  # evaluate every n batches
     save_freq: 1e6  # save model every n epochs, besides before and after training
-    batch_size: 64  # size of batches, for Imagenette 128
-    seed: 1234  # random seed
+    batch_size: 512  # size of batches, for Imagenette 128
+#    seed: 1234  # random seed
     max_training_minutes: 6120  # one hour and a 45 minutes max, process killed after n minutes (after finish of epoch)
     plot_weights_freq: 10  # plot pictures to tensorboard every n epochs
-    prune_freq: 1  # if pruning during training: how long to wait between pruning events after first pruning
-    prune_delay: 0   # "if pruning during training: how long to wait before pruning first time
+    prune_freq: 10  # if pruning during training: how long to wait between pruning events after first pruning
+    prune_delay: 10   # "if pruning during training: how long to wait before pruning first time
     lower_limit: 0.5
-    epochs: 80
-    rewind_to: 0  # rewind to this epoch if rewinding is done
+    epochs: 100
+    rewind_to: 6  # rewind to this epoch if rewinding is done
     hidden_dim: None
     input_dim: None
     output_dim: None
@@ -37,7 +37,7 @@ fixed:
     snip_steps: 5  # 's' in algorithm box, number of pruning steps for 'rule of thumb', TODO
     pruning_rate: 0.00  # pruning rate passed to criterion at pruning event. however, most override this
     growing_rate: 0.0000  # grow back so much every epoch (for future criterions)
-    pruning_limit: 0.98  # Prune until here, if structured in nodes, if unstructured in weights. most criterions use this instead of the pruning_rate
+#    pruning_limit: 0.00  # Prune until here, if structured in nodes, if unstructured in weights. most criterions use this instead of the pruning_rate
     local_pruning: 0
     prune_to: 10
     learning_rate: 2e-3
@@ -60,16 +60,16 @@ fixed:
     data_set: CIFAR10
     ood_data_set: SVHN
     ood_prune_data_set: SVHN
-    prune_criterion: EmptyCrit  # HoyerSquare is one shot, pruning limit doesn't matter in this implementation
+    prune_criterion: IMP  # HoyerSquare is one shot, pruning limit doesn't matter in this implementation
     train_scheme: DefaultTrainer  # default: DefaultTrainer
     attack: FGSM
-    epsilon: 4
-    eval_ood_data_sets: ['SVHN', 'CIFAR100', 'GAUSSIAN', 'OODOMAIN']
+    epsilon: 6
+    eval_ood_data_sets: ['SVHN', 'CIFAR100', 'GAUSSIAN']
     eval_attacks: ['FGSM', 'L2FGSM']
-    eval_epsilons: [4, 6, 12, 24, 48]
+    eval_epsilons: [6, 12, 48, 96]
 
     device: cuda
-    results_dir: "tests"
+    results_dir: "ResNet18"
 
     checkpoint_name: None
     checkpoint_model: None
@@ -83,7 +83,7 @@ fixed:
     get_hooks: 0
     track_weights: 0  # "keep statistics on the weights through training
     disable_masking: 1  # disable the ability to prune unstructured
-    enable_rewinding: 0  # enable the ability to rewind to previous weights
+    enable_rewinding: 1  # enable the ability to rewind to previous weights
     outer_layer_pruning: 1  # allow to prune outer layers (unstructured) or not (structured)
     first_layer_dense: 0
     random_shuffle_labels: 0  # run with random-label experiment from zhang et al
@@ -121,13 +121,13 @@ CIFAR10:
       hidden_dim: [512]
       N: 60000
 
-#grid:
-#  arguments:
-#    seed:
-#      type: choice
-#      options:
-#        - 1234
-#        - 2345
+grid:
+  arguments:
+    seed:
+      type: choice
+      options:
+        - 1234
+        - 2345
 #        - 3456
 #        - 4567
 #        - 5678
@@ -138,18 +138,13 @@ CIFAR10:
 #        - HoyerSquare
 #        - EmptyCrit
 
-#    pruning_limit:
-#      type: choice
-#      options:
-#        - 0.25
-#        - 0.5
-#        - 0.7
-#        - 0.8
-#        - 0.9
-#        - 0.95
-#        - 0.93
-#        - 0.98
-#        - 0.99
+    pruning_limit:
+      type: choice
+      options:
+        - 0.5
+        - 0.75
+        - 0.9
+        - 0.95
 
 #    train_scheme:
 #      type: choice

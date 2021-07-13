@@ -1,10 +1,10 @@
 import numpy as np
 from torch import nn
 
-
 """
 Just some util functions
 """
+
 
 def smooth(array, window=5000):
     new_array = np.zeros_like(array)
@@ -35,6 +35,16 @@ def lookahead_type(iterable):
         yield last, (isinstance(last, nn.Conv2d), isinstance(val, nn.Conv2d))
         last = val
     yield last, (isinstance(last, nn.Conv2d), None)
+
+
+def lookahead_type_name(iterable):
+    it = iter(
+        list([(name, element) for name, element in iterable]))
+    last = next(it)
+    for val in it:
+        yield last
+        last = val
+    yield last
 
 
 def lookahead_finished(iterable):

@@ -22,4 +22,6 @@ conda activate gr
 
 #python train.py /nfs/students/ayle/guided-research/FASHION-jpg/training --img_size 32 --channels 3 --batch 64 --prune_criterion Johnit --pruning_limit 0.9 --local_pruning --checkpoint checkpoint/model_criterion=EmptyCrit_sparsity=0.0_local=False_stable_011251.pt
 
-python train.py /nfs/students/ayle/guided-research/CIFAR-10-images/train --img_size 32 --channels 3 --batch 64 --prune_criterion EmptyCrit --checkpoint checkpoint/model_dataset=train_criterion=EmptyCrit_sparsity=0.0_local=False.pt --optim_checkpoint checkpoint/optim_dataset=train_criterion=EmptyCrit_sparsity=0.0_local=False.pt
+#python train.py /nfs/students/ayle/guided-research/CIFAR-10-images/train --img_size 32 --channels 3 --batch 64 --prune_criterion Johnit --pruning_limit 0.7 --local_pruning --checkpoint checkpoint/model_dataset=train_criterion=EmptyCrit_sparsity=0.0_local=False.pt  # --optim_checkpoint checkpoint/optim_dataset=train_criterion=EmptyCrit_sparsity=0.0_local=False.pt
+
+python train.py CELEBA --img_size 32 --channels 3 --batch 64 --prune_criterion EmptyCrit  --checkpoint checkpoint/model_dataset=CELEBA_criterion=EmptyCrit_sparsity=0.0_local=False.pt --optim_checkpoint checkpoint/optim_dataset=CELEBA_criterion=EmptyCrit_sparsity=0.0_local=False.pt  # --pruning_limit 0.7 --local_pruning --checkpoint checkpoint/model_dataset=train_criterion=EmptyCrit_sparsity=0.0_local=False.pt  # --optim_checkpoint checkpoint/optim_dataset=train_criterion=EmptyCrit_sparsity=0.0_local=False.pt

@@ -179,6 +179,24 @@ class John(SNIP):
 
     def get_weight_saliencies(self, train_loader, ood_loader=None):
 
+        # from torchvision import datasets, transforms, utils
+        # transformers = transforms.Compose([transforms.ToTensor(),
+        #                                    transforms.Normalize((0.2860,), (0.3530,))
+        #                                    ])
+        # test_set = datasets.FashionMNIST(
+        #     '/nfs/homedirs/ayle/guided-research/SNIP-it/gitignored/data',
+        #     train=True,
+        #     download=True,
+        #     transform=transformers
+        # )
+        # train_loader = torch.utils.data.DataLoader(
+        #     test_set,
+        #     batch_size=32,
+        #     shuffle=True,
+        #     pin_memory=True,
+        #     num_workers=4
+        # )
+
         device = self.model.device
 
         iterations = SNIP_BATCH_ITERATIONS

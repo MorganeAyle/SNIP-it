@@ -28,8 +28,8 @@ class DSEvaluation:
         all_preds = np.zeros(0)
         conf_true_labels = np.zeros(0)
         brier_scores = []
-        entropies = []
-        ood_entropies = []
+        entropies = np.zeros(0)
+        ood_entropies = np.zeros(0)
         accuracies = []
 
         with torch.no_grad():
@@ -42,8 +42,8 @@ class DSEvaluation:
                 probs = F.softmax(out, dim=-1)
                 preds, indices = torch.max(probs, dim=-1)
 
-                entropy = Categorical(probs).entropy().squeeze().mean()
-                entropies.append(entropy.cpu().numpy())
+                entropy = Categorical(probs).entropy().squeeze()
+                entropies = np.concatenate((entropies, entropy.cpu().numpy()))
 
                 brier_scores.append(calculate_brier_score(probs, y))
 
@@ -66,13 +66,13 @@ class DSEvaluation:
                 preds, _ = torch.max(probs, dim=-1)
 
                 # entropy
-                entropy = Categorical(probs).entropy().squeeze().mean()
+                entropy = Categorical(probs).entropy().squeeze()
+                ood_entropies = np.concatenate((ood_entropies, entropy.cpu().numpy()))
                 # accuracy
                 predictions = out.argmax(dim=-1, keepdim=True).view_as(y).cpu()
                 correct = y.eq(predictions).sum().item()
                 acc = correct / out.shape[0]
 
-                ood_entropies.append(entropy.cpu().numpy())
                 accuracies.append(acc)
 
                 true_labels = np.concatenate((true_labels, np.zeros(len(x))))
@@ -81,8 +81,13 @@ class DSEvaluation:
         auroc = calculate_auroc(true_labels, all_preds)
         aupr = calculate_aupr(true_labels, all_preds)
 
+        auroc_entropy = calculate_auroc(1 - true_labels, np.concatenate((entropies, ood_entropies)))
+        aupr_entropy = calculate_aupr(1 - true_labels, np.concatenate((entropies, ood_entropies)))
+
         auroc_name = f'auroc_{self.ds_dataset}'
         aupr_name = f'aupr_{self.ds_dataset}'
+        auroc_ent_name = f'auroc_entropy_{self.ds_dataset}'
+        aupr_ent_name = f'aupr_entropy_{self.ds_dataset}'
         entropy_name = f'entropy_{self.ds_dataset}'
         acc_name = f"acc_{self.ds_dataset}"
 
@@ -93,4 +98,7 @@ class DSEvaluation:
                 acc_name: np.mean(accuracies),
                 auroc_name: auroc,
                 aupr_name: aupr,
-                entropy_name: np.mean(ood_entropies)}
+                entropy_name: np.mean(ood_entropies),
+                auroc_ent_name: auroc_entropy,
+                aupr_ent_name: aupr_entropy
+                }

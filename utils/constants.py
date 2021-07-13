@@ -101,7 +101,9 @@ SINGLE_SHOT = [
     "EarlyJohn",
     "John",
     "Johnit",
-    "HYDRA"
+    "HYDRA",
+    "Synflow",
+    "EarlySynflow"
 ]
 SINGLE_SHOT += STRUCTURED_SINGLE_SHOT
 # DURING_TRAINING are actually only used to know if need to re-initialize optimizer after pruning for structured
