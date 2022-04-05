@@ -108,7 +108,9 @@ class Pruneable(GeneralModel):
 
             if self.is_maskable:
                 self.mask = {name + ".weight": torch.ones_like(module.weight.data).to(self.device) for name, module in
-                             self.named_modules() if (isinstance(module, (nn.Linear, nn.Conv2d)) and ('prior' not in name))
+                             self.named_modules() if (isinstance(module, (nn.Linear, nn.Conv2d)) and ('prior' not in name)
+                                                      and ("blocks.0" in name) and ("conv" in name)
+                                                      )
                              }
 
                 if not self._outer_layer_pruning:

@@ -78,10 +78,6 @@ class SNAP(General):
             corresponding_module: nn.Module = \
                 [val for key, val in self.model.named_modules() if key == name.split(".weight")[0]][0]
 
-            print(name)
-            print(corresponding_module)
-            print(binary_keep_neuron_vector.shape)
-
             # ensure not disconnecting
             if binary_keep_neuron_vector.sum() == 0:
                 best_index = torch.argmax(grad)
@@ -317,14 +313,6 @@ class SNAP(General):
 
             if i == iterations: break
 
-            ####
-            # adv_results, _ = construct_adversarial_examples(x, y, 'FGSM', self.model,
-            #                                                 self.model.device, False, False,
-            #                                                 [1])
-            # _, x, _ = adv_results
-            # x = torch.cat(x)
-            ####
-
             inputs = x.to(self.model.device)
             targets = y.to(self.model.device)
             outputs = net.forward(inputs)
@@ -348,6 +336,8 @@ class SNAP(General):
                     grads_abs2[(identification, name_)] = grad_ab
                     if identification not in grads_abs:
                         grads_abs[identification] = grad_ab
+
+        self.grads_abs = grads_abs
 
         # reset model
         net = net.cpu()
@@ -399,7 +389,8 @@ class SNAP(General):
                 layer.gov_in = gov_in
 
                 layer.weight.requires_grad = False
-                layer.bias.requires_grad = False
+                if layer.bias is not None:
+                    layer.bias.requires_grad = False
 
             # substitute activation function
             if is_fc:

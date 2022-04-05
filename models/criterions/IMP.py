@@ -21,7 +21,7 @@ class IMP(General):
             lower_limit = 0.2
 
         # define the k_i steps
-        self.steps = [limit - (limit - lower_limit) * (0.5 ** i) for i in range(steps + 1)] + [limit]
+        self.steps = [limit - (limit - lower_limit) * (0.5 ** i) for i in range(steps - 1)] + [limit]
         self.global_pruning = True
 
     def get_prune_indices(self, *args, **kwargs):

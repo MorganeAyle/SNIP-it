@@ -15,6 +15,7 @@ from torchvision import datasets, transforms, utils
 from model import Glow, InvConv2dLU, ZeroConv2d
 
 from glow.Johnit import Johnit
+from glow.SNIPit import SNIPit
 from glow.criterions.StructuredEFGit import StructuredEFGit
 
 from statsmodels.tsa.stattools import adfuller
@@ -139,23 +140,36 @@ def calc_loss(log_p, logdet, image_size, n_bins, channels):
 
 
 def train(args, model, optimizer, save_name):
+    print(args.path)
     if args.path == 'CELEBA':
-        dataset = iter(get_celeba_loaders('/nfs/homedirs/ayle/guided-research/SNIPit/gitignored/data/', args.batch, args.img_size))
+        dataset = iter(get_celeba_loaders('/nfs/students/ayle/guided-research/', args.batch, args.img_size))
         len_dataset = len(datasets.CelebA(
-            '/nfs/homedirs/ayle/guided-research/SNIPit/gitignored/data/',
+            '/nfs/students/ayle/guided-research/',
             split='train',
             download=True
         ))
         print(len_dataset)
-
     else:
         dataset = iter(sample_data(args.path, args.batch, args.img_size))
         len_dataset = len(datasets.ImageFolder(args.path))
     n_bins = 2.0 ** args.n_bits
 
     if args.prune_criterion == 'Johnit':
+        if args.path == 'CELEBA':
+            train_loader = get_celeba_loaders('/nfs/students/ayle/guided-research/', args.batch, args.img_size)
+        else:
+            train_loader = sample_data(args.path, args.batch, args.img_size)
         criterion = Johnit(limit=args.pruning_limit, model=model.module, generative=True, nbins=n_bins, img_size=args.img_size, channels=args.channels, loss_f=calc_loss)
-        criterion.prune(args.pruning_limit, train_loader=sample_data(args.path, args.batch, args.img_size), local=args.local_pruning)
+        criterion.prune(args.pruning_limit, train_loader=train_loader, local=args.local_pruning)
+    elif args.prune_criterion == 'SNIPit':
+        if args.path == 'CELEBA':
+            train_loader = get_celeba_loaders('/nfs/students/ayle/guided-research/', args.batch, args.img_size)
+        else:
+            train_loader = sample_data(args.path, args.batch, args.img_size)
+        criterion = SNIPit(limit=args.pruning_limit, model=model.module, generative=True, nbins=n_bins,
+                           img_size=args.img_size, channels=args.channels, loss_f=calc_loss)
+        criterion.prune(args.pruning_limit, train_loader=train_loader, local=args.local_pruning)
+
     elif args.prune_criterion == 'StructuredEFGit':
         criterion = StructuredEFGit(limit=args.pruning_limit, model=model.module, generative=True, nbins=n_bins,
                            img_size=args.img_size, channels=args.channels, loss_f=calc_loss)
@@ -224,7 +238,7 @@ def train(args, model, optimizer, save_name):
 
             # loss_test.append(loss)
 
-            if i % 100 == 0:
+            if i % 1000 == 0:
                 with torch.no_grad():
                     utils.save_image(
                         model_single.reverse(z_sample).cpu().data,
@@ -234,7 +248,7 @@ def train(args, model, optimizer, save_name):
                         range=(-0.5, 0.5),
                     )
 
-            if i % (len_dataset / 10000) == 0:
+            if i % 1000 == 0:
                 torch.save(
                     model.state_dict(), f"checkpoint/model_{save_name}.pt"
                 )

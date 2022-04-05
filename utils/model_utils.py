@@ -38,19 +38,26 @@ def _read_all_class_names():
     models[DATASETS] = {}
     models[DATASETS]["RUBBISH"] = get_rubbish_loaders
     models[DATASETS]["CIFAR10"] = get_cifar10_loaders
+    models[DATASETS]["CIFAR10_unnormalized"] = get_unnormalized_cifar10_loaders
+    models[DATASETS]["custom_CIFAR10"] = get_custom_cifar10_loaders
+    models[DATASETS]["custom_CIFAR10_unnormalized"] = get_unnormalized_cifar10_loaders
     models[DATASETS]["CIFAR100"] = get_cifar100_loaders
+    models[DATASETS]["CIFAR100_unnormalized"] = get_unnormalized_cifar100_loaders
     models[DATASETS]["TINYIMAGENET"] = get_imagenet_loaders
     models[DATASETS]["IMAGENETTE"] = get_imagenette_loaders
     models[DATASETS]["IMAGEWOOF"] = get_imagewoof_loaders
     models[DATASETS]["MNIST"] = get_mnist_loaders
+    models[DATASETS]["MNIST_unnormalized"] = get_unnormliazed_mnist_loaders
     models[DATASETS]["OMNIGLOT"] = get_omniglot_loaders
     models[DATASETS]["FASHION"] = get_fashionmnist_loaders
+    models[DATASETS]["FASHION_unnormalized"] = get_unnormalized_fashionmnist_loaders
     models[DATASETS]["GAUSSIAN"] = get_gaussian_noise_loaders
     models[DATASETS]["SVHN"] = get_svhn_loaders
     models[DATASETS]["KMNIST"] = get_kmnist_loaders
     models[DATASETS]["OMNIGLOT"] = get_omniglot_loaders
     models[DATASETS]["INV_OMNIGLOT"] = get_inverted_omniglot_loaders
     models[DATASETS]["OODOMAIN"] = get_oodomain_loaders
+    models[DATASETS]["LSUN"] = get_lsun_loaders
 
 
 def find_right_model(type: str, name: str, **kwargs):

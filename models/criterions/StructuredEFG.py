@@ -5,12 +5,14 @@ import torch.autograd as autograd
 import torch.nn as nn
 import torch.nn.functional as F
 
+from models.criterions.SNAP_tbd import SNAP_tbd
 from models.criterions.SNAP import SNAP
 from utils.constants import SNIP_BATCH_ITERATIONS
 from collections import OrderedDict
 
 
-class StructuredEFG(SNAP):
+class StructuredEFG(SNAP_tbd):
+# class StructuredEFG(SNAP):
 
     def __init__(self, *args, **kwargs):
         super(StructuredEFG, self).__init__(*args, **kwargs)

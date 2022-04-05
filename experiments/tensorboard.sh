@@ -18,5 +18,5 @@ squeue -j ${SLURM_JOBID} -O nodelist | tail -n +2
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate gr
 
-tensorboard --logdir /nfs/homedirs/ayle/guided-research/SNIP-it/gitignored/results/Conv6
+tensorboard --logdir /nfs/homedirs/ayle/guided-research/SNIP-it/gitignored/results/ResNet18
 #tensorboard --logdir /nfs/students/ayle/guided-research/ResNet18-week5

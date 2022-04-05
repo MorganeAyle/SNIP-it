@@ -15,59 +15,37 @@ class DSEvaluation:
     Performs evaluation to adversarial attacks
     """
 
-    def __init__(self, test_loader, ds_loader, model, device, arguments, ds_dataset, **kwargs):
-        self.args = arguments
+    def __init__(self, ds_loader, model, device, ds_dataset, ensemble=None, **kwargs):
         self.device = device
         self.model = model
-        self.test_loader = test_loader
         self.ds_loader = ds_loader
         self.ds_dataset = ds_dataset
+        self.ensemble = ensemble
 
-    def evaluate(self, **kwargs):
-        true_labels = np.zeros(0)
-        all_preds = np.zeros(0)
-        conf_true_labels = np.zeros(0)
-        brier_scores = []
-        entropies = np.zeros(0)
+    def evaluate(self, true_labels, all_preds, entropies, **kwargs):
         ood_entropies = np.zeros(0)
         accuracies = []
 
         with torch.no_grad():
-            for batch_num, batch in enumerate(self.test_loader):
-                x, y = batch
-
-                x = x.to(self.device)
-
-                out = self.model(x)
-                probs = F.softmax(out, dim=-1)
-                preds, indices = torch.max(probs, dim=-1)
-
-                entropy = Categorical(probs).entropy().squeeze()
-                entropies = np.concatenate((entropies, entropy.cpu().numpy()))
-
-                brier_scores.append(calculate_brier_score(probs, y))
-
-                true_labels = np.concatenate((true_labels, np.ones(len(x))))
-                all_preds = np.concatenate((all_preds, preds.cpu().reshape((-1))))
-                conf_true_labels = np.concatenate((conf_true_labels, torch.isclose(y.cpu(), indices.cpu()).numpy().astype(float).reshape(-1)))
-
-        conf_auroc = calculate_auroc(conf_true_labels, all_preds)
-        conf_aupr = calculate_aupr(conf_true_labels, all_preds)
-        brier_score = np.mean(np.array(brier_scores))
-
-        with torch.no_grad():
             for batch_num, batch in enumerate(self.ds_loader):
                 x, y = batch
-
                 x = x.to(self.device)
 
-                out = self.model(x)
+                if not self.ensemble:
+                    out = self.model(x)
+                else:
+                    out = 0
+                    for model in self.ensemble:
+                        out += model(x)
+                    out /= len(self.ensemble)
                 probs = F.softmax(out, dim=-1)
                 preds, _ = torch.max(probs, dim=-1)
 
                 # entropy
                 entropy = Categorical(probs).entropy().squeeze()
+                entropies = np.concatenate((entropies, entropy.detach().cpu().numpy()))
                 ood_entropies = np.concatenate((ood_entropies, entropy.cpu().numpy()))
+
                 # accuracy
                 predictions = out.argmax(dim=-1, keepdim=True).view_as(y).cpu()
                 correct = y.eq(predictions).sum().item()
@@ -81,8 +59,8 @@ class DSEvaluation:
         auroc = calculate_auroc(true_labels, all_preds)
         aupr = calculate_aupr(true_labels, all_preds)
 
-        auroc_entropy = calculate_auroc(1 - true_labels, np.concatenate((entropies, ood_entropies)))
-        aupr_entropy = calculate_aupr(1 - true_labels, np.concatenate((entropies, ood_entropies)))
+        auroc_entropy = calculate_auroc(1 - true_labels, entropies)
+        aupr_entropy = calculate_aupr(1 - true_labels, entropies)
 
         auroc_name = f'auroc_{self.ds_dataset}'
         aupr_name = f'aupr_{self.ds_dataset}'
@@ -91,11 +69,7 @@ class DSEvaluation:
         entropy_name = f'entropy_{self.ds_dataset}'
         acc_name = f"acc_{self.ds_dataset}"
 
-        return {'conf_auroc': conf_auroc,
-                'conf_aupr': conf_aupr,
-                'brier_score': brier_score,
-                'entropy': np.mean(entropies),
-                acc_name: np.mean(accuracies),
+        return {acc_name: np.mean(accuracies),
                 auroc_name: auroc,
                 aupr_name: aupr,
                 entropy_name: np.mean(ood_entropies),

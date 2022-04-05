@@ -45,6 +45,7 @@ class GRASP(SNIP):
             if name + ".weight" in self.model.mask:
                 grads[name + ".weight"] = - layer.weight.data * layer.weight.grad  # torch.abs(layer.weight.data * layer.weight.grad)
 
+        self.grads_abs = grads
         # Gather all scores in a single vector and normalise
         all_scores = torch.cat([torch.flatten(x) for _, x in grads.items()])
 

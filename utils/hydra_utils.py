@@ -1,22 +1,67 @@
 import torch.nn.functional as F
+import torch.autograd as autograd
+import torch
 
 
-def linear_forward(self, x):
+class GetSubnet(autograd.Function):
+    @staticmethod
+    def forward(ctx, scores, k):
+        # Get the subnetwork by sorting the scores and using the top k%
+        out = scores.clone()
+        _, idx = scores.flatten().sort()
+        j = int((1 - k) * scores.numel())
+
+        # flat_out and out access the same memory.
+        flat_out = out.flatten()
+        flat_out[idx[:j]] = 0
+        flat_out[idx[j:]] = 1
+
+        return out
+
+    @staticmethod
+    def backward(ctx, g):
+        # send the gradient g straight-through on the backward pass.
+        return g, None
+
+
+def percentile(t, q):
+    k = 1 + round(.01 * float(q) * (t.numel() - 1))
+    return t.view(-1).kthvalue(k).values.item()
+
+
+class GetSubnetFaster(autograd.Function):
+    @staticmethod
+    def forward(ctx, scores, zeros, ones, sparsity):
+        k_val = percentile(scores, sparsity * 100)
+        return torch.where(scores < k_val, zeros.to(scores.device), ones.to(scores.device))
+
+    @staticmethod
+    def backward(ctx, g):
+        return g, None, None, None
+
+
+def linear_forward(layer, x):
+    # subnet = GetSubnet.apply(layer.gov.float(), layer.prune_rate)
+    subnet = GetSubnetFaster.apply(layer.gov.float(), torch.zeros_like(layer.gov.data), torch.ones_like(layer.gov.data), layer.prune_rate)
+    w = layer.weight.data * subnet
     return F.linear(x.float(),
-                    self.weight.data * self.gov.float(),
+                    w,
                     # self.gov.float(),
-                    bias=self.bias.float())
+                    bias=layer.bias.float())
 
 
-def conv_forward(self, x):
+def conv_forward(layer, x):
+    # subnet = GetSubnet.apply(layer.gov.float(), layer.prune_rate)
+    subnet = GetSubnetFaster.apply(layer.gov.float(), torch.zeros_like(layer.gov.data), torch.ones_like(layer.gov.data), layer.prune_rate)
+    w = layer.weight.data * subnet
     return (F.conv2d(x,
-                     self.weight.data * self.gov.float(),
+                     w,
                      # self.gov.float(),
-                     self.bias,
-                     self.stride,
-                     self.padding,
-                     self.dilation,
-                     self.groups))
+                     layer.bias,
+                     layer.stride,
+                     layer.padding,
+                     layer.dilation,
+                     layer.groups))
 
 
 def calculate_fan_in(tensor):

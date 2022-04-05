@@ -23,8 +23,8 @@ class GeneralModel(nn.Module, metaclass=Meta):
         self.device = device
         super(GeneralModel, self).__init__()
 
-        if len(kwargs) > 0:
-            print(f"Ignored arguments in {self.__class__.__name__}: {kwargs}")
+        # if len(kwargs) > 0:
+        #     print(f"Ignored arguments in {self.__class__.__name__}: {kwargs}")
 
     def post_init(self):
 
@@ -36,4 +36,5 @@ class GeneralModel(nn.Module, metaclass=Meta):
         self.initialised = True
 
     def post_init_implementation(self):
-        print(f"No post init specified in {self.__class__.__name__}")
+        pass
+        # print(f"No post init specified in {self.__class__.__name__}")

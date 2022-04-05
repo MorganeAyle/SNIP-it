@@ -73,42 +73,37 @@ def main_worker(args):
     in_data = get_dataset(args)
     ood_data = getattr(data, args.ood_set)(args)
 
-    if args.label_smoothing is None:
-        criterion = nn.CrossEntropyLoss().cuda()
-    else:
-        criterion = LabelSmoothing(smoothing=args.label_smoothing)
-
-    acc = []
-    ood_true = np.zeros(0)
-    ood_preds = np.zeros(0)
-    for batch in in_data.val_loader:
-        x, y = batch
-        x, y = x.cuda().float(), y.cuda()
-        out = model(x).squeeze()
-        predictions = out.argmax(dim=-1, keepdim=True).view_as(y)
-        correct = y.eq(predictions).sum().item()
-        acc.append(correct / out.shape[0])
-
-        probs = F.softmax(out, dim=-1)
-        preds, _ = torch.max(probs, dim=-1)
-        preds = preds.detach().cpu()
-        ood_true = np.concatenate((ood_true, np.ones(len(preds))))
-        ood_preds = np.concatenate((ood_preds, preds.reshape((-1))))
-
-    for batch in ood_data.val_loader:
-        x, y = batch
-        x, y = x.cuda().float(), y.cuda()
-        out = model(x).squeeze()
-
-        probs = F.softmax(out, dim=-1)
-        preds, _ = torch.max(probs, dim=-1)
-        preds = preds.detach().cpu()
-        ood_true = np.concatenate((ood_true, np.zeros(len(preds))))
-        ood_preds = np.concatenate((ood_preds, preds.reshape((-1))))
-
-    print('Accuracy', np.mean(acc))
-    print('AUROC', calculate_auroc(ood_true, ood_preds))
-
+    # acc = []
+    # ood_true = np.zeros(0)
+    # ood_preds = np.zeros(0)
+    # for batch in in_data.val_loader:
+    #     x, y = batch
+    #     x, y = x.cuda().float(), y.cuda()
+    #     out = model(x).squeeze()
+    #     predictions = out.argmax(dim=-1, keepdim=True).view_as(y)
+    #     correct = y.eq(predictions).sum().item()
+    #     acc.append(correct / out.shape[0])
+    #
+    #     probs = F.softmax(out, dim=-1)
+    #     preds, _ = torch.max(probs, dim=-1)
+    #     preds = preds.detach().cpu()
+    #     ood_true = np.concatenate((ood_true, np.ones(len(preds))))
+    #     ood_preds = np.concatenate((ood_preds, preds.reshape((-1))))
+    #
+    # for batch in ood_data.val_loader:
+    #     x, y = batch
+    #     x, y = x.cuda().float(), y.cuda()
+    #     out = model(x).squeeze()
+    #
+    #     probs = F.softmax(out, dim=-1)
+    #     preds, _ = torch.max(probs, dim=-1)
+    #     preds = preds.detach().cpu()
+    #     ood_true = np.concatenate((ood_true, np.zeros(len(preds))))
+    #     ood_preds = np.concatenate((ood_preds, preds.reshape((-1))))
+    #
+    # print('Accuracy', np.mean(acc))
+    # print('AUROC', calculate_auroc(ood_true, ood_preds))
+    #
     # class DS(Dataset):
     #
     #     def __init__(self, images, labels):
@@ -132,6 +127,13 @@ def main_worker(args):
     #         return len(self.images)
     #
     # ds_path = '/nfs/homedirs/ayle/guided-research/SNIP-it/gitignored/data/cifar10_corrupted'
+    # avg_auroc_1 = 0
+    # avg_auroc_3 = 0
+    # avg_auroc_5 = 0
+    # avg_acc_1 = 0
+    # avg_acc_3 = 0
+    # avg_acc_5 = 0
+    #
     # for ds_dataset_name in os.listdir(ds_path):
     #     npz_dataset = np.load(os.path.join(ds_path, ds_dataset_name))
     #
@@ -143,6 +145,16 @@ def main_worker(args):
     #         pin_memory=True,
     #         num_workers=0
     #     )
+    #
+    #     acc = []
+    #     for batch in ds_loader:
+    #         x, y = batch
+    #         x, y = x.cuda().float(), y.cuda()
+    #         out = model(x).squeeze()
+    #         predictions = out.argmax(dim=-1, keepdim=True).view_as(y)
+    #         correct = y.eq(predictions).sum().item()
+    #         acc.append(correct / out.shape[0])
+    #
     #     ood_true = np.zeros(0)
     #     ood_preds = np.zeros(0)
     #     for batch in in_data.val_loader:
@@ -167,7 +179,52 @@ def main_worker(args):
     #         ood_true = np.concatenate((ood_true, np.zeros(len(preds))))
     #         ood_preds = np.concatenate((ood_preds, preds.reshape((-1))))
     #
-    #     print('AUROC', ds_dataset_name, calculate_auroc(ood_true, ood_preds))
+    #     auroc = calculate_auroc(ood_true, ood_preds)
+    #     accuracy = np.mean(acc)
+    #
+    #     if ds_dataset_name.endswith('1.npz'):
+    #         avg_auroc_1 += auroc
+    #         avg_acc_1 += accuracy
+    #     if ds_dataset_name.endswith('3.npz'):
+    #         avg_auroc_3 += auroc
+    #         avg_acc_3 += accuracy
+    #     if ds_dataset_name.endswith('5.npz'):
+    #         avg_auroc_5 += auroc
+    #         avg_acc_5 += accuracy
+    #
+    #     print('AUROC', ds_dataset_name, auroc)
+    #     print('ACC', ds_dataset_name, accuracy)
+    #
+    # print('AUROC 1', avg_auroc_1 / 15)
+    # print('ACC 1', avg_acc_1 / 15)
+    # print('AUROC 3', avg_auroc_3 / 15)
+    # print('ACC 3', avg_acc_3 / 15)
+    # print('AUROC 5', avg_auroc_5 / 15)
+    # print('ACC 5', avg_acc_5 / 15)
+
+    model.eval()
+
+    success_rates = []
+    adv_acc = []
+    for batch in in_data.val_loader:
+        x, y = batch
+        x, y = x.cuda().float(), y.cuda()
+
+        out = model(x)
+        probs = F.softmax(out, dim=-1)
+        preds, indices = torch.max(probs, dim=-1)
+
+        adv_results, predictions = construct_adversarial_examples(x, y, 'FGSM', model, x.device, 8, False, False)
+        _, advs, success = adv_results
+
+        attack_success = (success.float().sum() / len(success)).item()
+        adv_equality = (model.forward(advs).argmax(dim=-1) == predictions)
+        predicted_same_as_model = (adv_equality.float().sum() / len(success)).item()
+
+        success_rates.append(attack_success)
+        adv_acc.append(predicted_same_as_model)
+    print('ADV', np.mean(success_rates))
+    print('Adv accuracy', np.mean(adv_acc))
 
 
 def get_trainer(args):
@@ -392,6 +449,60 @@ def write_result_to_csv(**kwargs):
                 "{best_train_acc5:.02f}\n"
             ).format(now=now, **kwargs)
         )
+
+import foolbox as fb
+import torch
+
+
+def get_attack(method_name):
+
+    att = fb.attacks
+
+    # print("> PERFORMING ADV ATTACK", method_name)
+
+    switcher = {
+        "CarliniWagner": att.L2CarliniWagnerAttack,
+        "LinfPGD": att.LinfPGD,
+        "L1FastGradientAttack": att.L1FastGradientAttack,
+        "L2DeepFoolAttack": att.L2DeepFoolAttack,
+        "FGSM": att.FGSM,
+        "L2FGSM": att.L2FastGradientAttack,
+        "DDNAttack": att.DDNAttack,
+        "SaltAndPepperNoiseAttack": att.SaltAndPepperNoiseAttack,
+        "L2RepeatedAdditiveGaussianNoiseAttack": att.L2RepeatedAdditiveGaussianNoiseAttack,
+    }
+    attack = switcher.get(method_name, f"{method_name} not recognised")()
+    return attack
+
+
+def construct_adversarial_examples(im, crit, method, model, device, epsilon, exclude_wrong_predictions=False, targeted=False):
+    bounds = (im.min().item(), im.max().item())
+    epsilon = epsilon / 255
+    fmodel = fb.PyTorchModel(model, bounds=bounds, device=device)
+
+    im = im.to(device)
+    crit = crit.to(device)
+    probs = model.forward(im)
+    predictions = probs.argmax(dim=-1)
+
+    if exclude_wrong_predictions:
+        selection = predictions == crit
+        im = im[selection]
+        crit = crit[selection]
+        predictions = predictions[selection]
+
+    if targeted:
+        target = 1
+        selection = crit != target
+        im = im[selection]
+        predictions = predictions[selection]
+        miss_classifications = torch.tensor([target] * len(im))
+        crit = fb.criteria.TargetedMisclassification(
+            miss_classifications)
+
+    attack = get_attack(method)
+
+    return attack(fmodel, im, crit, epsilons=epsilon), predictions
 
 
 if __name__ == "__main__":

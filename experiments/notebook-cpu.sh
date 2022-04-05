@@ -16,7 +16,7 @@ squeue -j ${SLURM_JOBID} -O nodelist | tail -n +2
 
 # Activate your conda environment if necessary
 source ~/miniconda3/etc/profile.d/conda.sh
-conda activate gr
+conda activate inv
 
 cd ..
 

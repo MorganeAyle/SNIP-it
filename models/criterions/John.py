@@ -22,13 +22,14 @@ class John(SNIP):
     https://github.com/alecwangcq/GraSP
     """
 
-    def __init__(self, generative=False, img_size=28, nbins=2**5, channels=3, loss_f=None, *args, **kwargs):
+    def __init__(self, generative=False, img_size=28, nbins=2**5, channels=3, loss_f=None, ood_train=False, *args, **kwargs):
         super(John, self).__init__(*args, **kwargs)
         self.generative = generative
         self.img_size = img_size
         self.nbins = nbins
         self.channels = channels
         self.loss_f = loss_f
+        self.ood_train = ood_train
 
     def get_prune_indices(self, *args, **kwargs):
         raise NotImplementedError
@@ -179,41 +180,27 @@ class John(SNIP):
 
     def get_weight_saliencies(self, train_loader, ood_loader=None):
 
-        # from torchvision import datasets, transforms, utils
-        # transformers = transforms.Compose([transforms.ToTensor(),
-        #                                    transforms.Normalize((0.2860,), (0.3530,))
-        #                                    ])
-        # test_set = datasets.FashionMNIST(
-        #     '/nfs/homedirs/ayle/guided-research/SNIP-it/gitignored/data',
-        #     train=True,
-        #     download=True,
-        #     transform=transformers
-        # )
-        # train_loader = torch.utils.data.DataLoader(
-        #     test_set,
-        #     batch_size=32,
-        #     shuffle=True,
-        #     pin_memory=True,
-        #     num_workers=4
-        # )
-
         device = self.model.device
 
-        iterations = SNIP_BATCH_ITERATIONS
+        # iterations = SNIP_BATCH_ITERATIONS
+        iterations = 1
 
         net = self.model.eval()
 
-        self.their_implementation(device, iterations, net, train_loader)
+        self.their_implementation(device, iterations, net, train_loader, ood_loader)
         # self.their_implementation(device, iterations, net, ood_loader)
 
         # collect gradients
         grads = {}
+        self.grads_abs = {}
         for name, layer in net.named_modules():
             if "Norm" in str(layer): continue
             if name + ".weight" in self.model.mask:
                 grads[name + ".weight"] = torch.abs(
                     # grads[name + ".weight"] = -(
                     layer.weight.data * layer.weight.grad)
+                self.grads_abs[name + ".weight"] = (grads[name + ".weight"]- grads[name + ".weight"].min()) / (grads[name + ".weight"].max() - grads[name + ".weight"].min())
+        # self.grads_abs = grads
 
         # Gather all scores in a single vector and normalise
         all_scores = torch.cat([torch.flatten(x) for _, x in grads.items()])
@@ -229,7 +216,7 @@ class John(SNIP):
 
         return all_scores, grads, log10, norm_factor
 
-    def their_implementation(self, device, iterations, net, train_loader):
+    def their_implementation(self, device, iterations, net, train_loader, ood_loader=None):
         net.zero_grad()
         weights = []
         for layer in net.modules():
@@ -243,25 +230,21 @@ class John(SNIP):
             w.requires_grad_(True)
         dataloader_iter = iter(train_loader)
         for it in range(iterations):
+            # for it in range(int(len(dataloader_iter) * 0.5)):
             inputs, targets = next(dataloader_iter)
             N = inputs.shape[0]
             din = copy.deepcopy(inputs)
             dtarget = copy.deepcopy(targets)
 
             start = 0
-            intv = 20
+            intv = N
 
             while start < N:
                 end = min(start + intv, N)
                 inputs_one.append(din[start:end])
                 targets_one.append(dtarget[start:end])
-                if not self.generative:
-                    outputs = net.forward(inputs[start:end].to(device))  # divide by temperature to make it uniform
-                    loss = F.cross_entropy(outputs, targets[start:end].to(device))
-                else:
-                    log_p, logdet, _ = net(inputs[start:end].to(device))
-                    logdet = logdet.mean()
-                    loss, _, _ = self.loss_f(log_p, logdet, self.img_size, self.nbins, channels=self.channels)
+                outputs = net.forward(inputs[start:end].to(device))  # divide by temperature to make it uniform
+                loss = F.cross_entropy(outputs, targets[start:end].to(device))
                 grad_w_p = autograd.grad(loss, weights, create_graph=False)
                 # grad_w_p = autograd.grad(outputs, weights, grad_outputs=torch.ones_like(outputs), create_graph=False)
                 if grad_w is None:
@@ -273,13 +256,8 @@ class John(SNIP):
         for it in range(len(inputs_one)):
             inputs = inputs_one.pop(0).to(device)
             targets = targets_one.pop(0).to(device)
-            if not self.generative:
-                outputs = net.forward(inputs)  # divide by temperature to make it uniform
-                loss = F.cross_entropy(outputs, targets)
-            else:
-                log_p, logdet, _ = net(inputs)
-                logdet = logdet.mean()
-                loss, _, _ = self.loss_f(log_p, logdet, self.img_size, self.nbins, channels=self.channels)
+            outputs = net.forward(inputs)  # divide by temperature to make it uniform
+            loss = F.cross_entropy(outputs, targets)
             grad_f = autograd.grad(loss, weights, create_graph=True)
             # grad_f = autograd.grad(outputs, weights, grad_outputs=torch.ones_like(outputs), create_graph=True)
             z = 0

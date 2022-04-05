@@ -1,0 +1,283 @@
+seml:
+  executable: experiments/main_wi.py
+  name: train
+  output_dir: gitignored/logs
+  project_root_dir: ..
+  conda_environment: inv
+
+slurm:
+  experiments_per_job: 1
+  sbatch_options:
+    gres: gpu:1       # num GPUs
+    mem: 16G          # memory
+    cpus-per-task: 1  # num cores
+    time: 3-0:00     # max time, D-HH:MM
+    partition: ['gpu_all']
+#    qos: interactive
+
+###### BEGIN PARAMETER CONFIGURATION ######
+
+fixed:
+  arguments:
+    eval_freq: 1000  # evaluate every n batches
+    save_freq: 1e6  # save model every n epochs, besides before and after training
+    batch_size: 512 # 128  # size of batches, for Imagenette 128
+    max_training_minutes: 6120  # one hour and a 45 minutes max, process killed after n minutes (after finish of epoch)
+    plot_weights_freq: 10  # plot pictures to tensorboard every n epochs
+    prune_freq: 1  # if pruning during training: how long to wait between pruning events after first pruning
+    prune_delay: 0  # "if pruning during training: how long to wait before pruning first time
+    lower_limit: 0.5
+    epochs: 50
+    rewind_to: 6  # rewind to this epoch if rewinding is done
+    hidden_dim: None
+    input_dim: None
+    output_dim: None
+    N: 1  # size of dataset (used for l0)
+    snip_steps: 6  # 's' in algorithm box, number of pruning steps for 'rule of thumb', TODO
+    snip_iter: 5
+    pruning_rate: 0.00  # pruning rate passed to criterion at pruning event. however, most override this
+    growing_rate: 0.0000  # grow back so much every epoch (for future criterions)
+    pruning_limit: 0.0  # Prune until here, if structured in nodes, if unstructured in weights. most criterions use this instead of the pruning_rate
+    local_pruning: 0
+    prune_to: 10
+    learning_rate: 2e-3 # 0.1 # 2e-3
+    grad_clip: 10
+    grad_noise: 0  # added gaussian noise to gradients
+    l2_reg: 5e-5  # weight decay
+    l1_reg: 0  # l1-norm regularisation
+    lp_reg: 0  # lp regularisation with p < 1
+    l0_reg: 1.0  # l0 reg lambda hyperparam
+    hoyer_reg: 0.001  # hoyer reg lambda hyperparam
+    beta_ema: 0.999  # l0 reg beta ema hyperparam
+    delta_t: 100
+    t_end: 100
+    alpha: 1.0
+    momentum: 0.9
+
+    loss: CrossEntropy
+#    loss: HoyerSquare
+    optimizer: ADAM
+    model: ResNet18 # WideResNet28x10  # ResNet not supported with structured
+    data_set: CIFAR10
+    ood_data_set: SVHN
+    ood_prune_data_set: SVHN
+    prune_criterion: EmptyCrit  # HoyerSquare is one shot, pruning limit doesn't matter in this implementation
+    train_scheme: DefaultTrainer  # default: DefaultTrainer
+    attack: FGSM
+    epsilon: 8
+    eval_ood_data_sets: ['SVHN', 'CIFAR100']
+    eval_attacks: ['FGSM']
+    eval_epsilons: [8]
+    with_augmentations: 0
+    wi_pruning: 0.0
+    test_batch_size: 2
+    num_samples: 500
+    with_standard: 0
+
+    device: cuda
+    results_dir: 'ResNet18' # "WideResNet28x10"
+
+    checkpoint_name: None
+    checkpoint_model: "ResNet18_finished.pickle"
+
+    disable_cuda_benchmark: 1  # speedup (disable) vs reproducibility (leave it)
+    eval: 0
+    disable_autoconfig: 0  # for the brave
+    preload_all_data: 0  # load all data into ram memory for speedups
+    tuning: 0  # splits trainset into train and validationset, omits test set
+
+    get_hooks: 0
+    track_weights: 0  # "keep statistics on the weights through training
+    disable_masking: 1  # disable the ability to prune unstructured
+    enable_rewinding: 0  # enable the ability to rewind to previous weights
+    outer_layer_pruning: 1  # allow to prune outer layers (unstructured) or not (structured)
+    first_layer_dense: 0
+    random_shuffle_labels: 0  # run with random-label experiment from zhang et al
+    l0: 0  # run with l0 criterion, might overwrite some other arguments
+    hoyer_square: 0  # "run in unstructured DeephoyerSquare criterion, might overwrite some other arguments
+    group_hoyer_square: 0 # run in unstructured Group-DeephoyerSquare criterion, might overwrite some other arguments
+
+    disable_histograms: 0
+    disable_saliency: 0
+    disable_confusion: 0
+    disable_weightplot: 0
+    disable_netplot: 0
+    skip_first_plot: 0
+    disable_activations: 0
+
+#hoyer_square:
+#  fixed:
+#    arguments:
+#      loss: "HoyerSquare"
+#      prune_criterion: "HoyerSquare"
+
+#MNIST:
+#  fixed:
+#    arguments:
+#      input_dim: [1, 28, 28]
+#      output_dim: 10
+#      hidden_dim: [512]
+#      N: 60000
+#      mean: (0.1307,)
+#      std: (0.3081,)
+
+CIFAR10:
+  fixed:
+    arguments:
+      input_dim: [3, 32, 32]
+      output_dim: 10
+      hidden_dim: [512]
+      N: 60000
+      mean:  (0.4914, 0.4822, 0.4465)
+      std: (0.2471, 0.2435, 0.2616)
+
+grid:
+  arguments:
+    seed:
+      type: choice
+      options:
+        - 1234
+        - 2345
+        - 3456
+
+#CIFAR100:
+#  fixed:
+#    arguments:
+#      input_dim: [3, 32, 32]
+#      output_dim: 100
+#      hidden_dim: [512]
+#      N: 50000
+#      mean:  (0.5071, 0.4865, 0.4409)
+#      std: (0.2673, 0.2564, 0.2762)
+
+#    pruning_limit:
+#      type: choice
+#      options:
+#        - 0.4
+#        - 0.5
+#        - 0.75
+#        - 0.9
+#        - 0.95
+#        - 0.98
+
+# l0:
+#   fixed:
+#     arguments:
+#       loss: "L0CrossEntropy"
+#       train_scheme: "L0Trainer"
+#       prune_criterion: "EmptyCrit"
+#       pruning_rate: 0.0
+#       growing_rate: 0.0
+#       outer_layer_pruning: True
+#       disable_weightplot: False
+#       disable_netplot: False
+#       prune_delay: 10000000000000
+
+# group_hoyer_square:
+#   fixed:
+#     arguments:
+#       loss: "GroupHoyerSquare"
+#       prune_criterion: "GroupHoyerSquare"
+
+# FASHION:
+#   fixed:
+#     arguments:
+#       input_dim: [1, 28, 28]
+#       output_dim: 10
+#       hidden_dim: [512]
+#       N: 60000
+#       mean: (0.2860,)
+#        std: (0.3530,)
+
+# OMNIGLOT:
+#   fixed:
+#     arguments:
+#       input_dim: [
+#                 1,
+#                 105,
+#                 105
+#         ]
+#       output_dim: 1623
+#       hidden_dim: [
+#                 512
+#         ]
+#       N: 19456
+
+# "CIFAR10": {
+#         "input_dim": [
+#                 3,
+#                 32,
+#                 32
+#         ],
+#         "output_dim": 10,
+#         "hidden_dim": [
+#                 512
+#         ],
+#         "N": 50000
+# },
+
+
+
+# "TEST@HOME": {
+#         "input_dim": [
+#                 3,
+#                 244,
+#                 244
+#         ],
+#         "output_dim": 2,
+#         "hidden_dim": [
+#                 128
+#         ],
+#         "N": -1
+# },
+# "RUBBISH": {
+#         "input_dim": [
+#                 1,
+#                 3,
+#                 3
+#         ],
+#         "output_dim": 2,
+#         "hidden_dim": [
+#                 512
+#         ],
+#         "N": 10000
+# },
+# "TINYIMAGENET": {
+#         "input_dim": [
+#                 3,
+#                 128,
+#                 128
+#         ],
+#         "output_dim": 20000,
+#         "hidden_dim": [
+#                 512
+#         ],
+#         "N": 100096
+# },
+# "IMAGENETTE": {
+#         "input_dim": [
+#                 3,
+#                 128,
+#                 128
+#         ],
+#         "output_dim": 10,
+#         "hidden_dim": [
+#                 512
+#         ],
+#         "N": 12928
+#mean = [0.485, 0.456, 0.406]
+#    std = [0.229, 0.224, 0.225]
+# },
+# "IMAGEWOOF": {
+#         "input_dim": [
+#                 3,
+#                 128,
+#                 128
+#         ],
+#         "output_dim": 10,
+#         "hidden_dim": [
+#                 512
+#         ],
+#         "N": 12928
+#mean = [0.485, 0.456, 0.406]
+#    std = [0.229, 0.224, 0.225]

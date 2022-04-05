@@ -7,7 +7,8 @@ from utils.data_manager import DataManager
 
 
 PROJ_NAME = "SNIP-it"
-WORKING_DIR_PATH = "."
+# WORKING_DIR_PATH = "."
+WORKING_DIR_PATH = "/nfs/students/ayle/guided-research/"
 
 # output
 RESULTS_DIR = "results/"
@@ -27,7 +28,7 @@ PROGRESS_DIR = "progress"
 OUTPUT_DIRS = [OUTPUT_DIR, SUMMARY_DIR, CODEBASE_DIR, MODELS_DIR, PROGRESS_DIR]
 
 DATA_MANAGER = DataManager(os.path.join(WORKING_DIR_PATH, GITIGNORED_DIR))
-DATASET_PATH = os.path.join(GITIGNORED_DIR, DATA_DIR)
+DATASET_PATH = os.path.join(DATA_MANAGER.directory, DATA_DIR)
 RESULTS_PATH = os.path.join(DATA_MANAGER.directory, RESULTS_DIR)
 
 
@@ -88,11 +89,13 @@ STRUCTURED_SINGLE_SHOT = [
     "CNIPit",
     "StructuredEFG",
     "StructuredEFGit",
-    "EarlyStructuredEFGit"
+    "EarlyStructuredEFGit",
+    "SNAP_wi"
 ]
 # single short can never be pruned during training because of condition in default trainer (is pruning time)
 SINGLE_SHOT = [
     "SNIP",
+    "SNIPOOD",
     "SNIPit",
     "SNIPitAdv",
     "GRASP",
@@ -102,8 +105,16 @@ SINGLE_SHOT = [
     "John",
     "Johnit",
     "HYDRA",
+    "HYDRAAdv",
+    "HYDRAOOD",
+    "HYDRADS",
+    "HYDRAdetect",
+    "Edgepop",
     "Synflow",
-    "EarlySynflow"
+    "EarlySynflow",
+    "WeightImportance",
+    "WeightImportanceit",
+    "SNIPAfter"
 ]
 SINGLE_SHOT += STRUCTURED_SINGLE_SHOT
 # DURING_TRAINING are actually only used to know if need to re-initialize optimizer after pruning for structured

@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from models.criterions.General import General
 from utils.constants import RESULTS_DIR, OUTPUT_DIR, SNIP_BATCH_ITERATIONS
 from utils.attacks_utils import construct_adversarial_examples
+from torch import nn
 
 
 class SNIPOOD(General):
@@ -73,6 +74,7 @@ class SNIPOOD(General):
         # accumalate gradients of multiple batches
         net.zero_grad()
         loss_sum = torch.zeros([1]).to(self.device)
+        ood_loss = nn.KLDivLoss(reduction='batchmean')
         for i, (x, y) in enumerate(train_loader):
 
             if i == iterations: break
@@ -86,8 +88,11 @@ class SNIPOOD(General):
             ##
             print("With ood loss")
             ood_batch = next(iter(ood_loader))
-            outputs = net.forward(ood_batch[0].to(self.model.device))
-            loss -= F.nll_loss(outputs, targets) / iterations
+            ood_outputs = net.forward(ood_batch[0].float().to(self.model.device))
+
+            loss += 0.5 * ood_loss.forward(torch.log(F.softmax(ood_outputs, -1)), torch.ones_like(ood_outputs).float() / 10) / iterations
+
+            # loss -= 0.5 * F.nll_loss(ood_outputs, targets) / iterations
             ##
 
             loss.backward()

@@ -15,10 +15,9 @@ from utils.constants import NUM_WORKERS, FLIP_CHANCE, DATASET_PATH, IMAGENETTE_D
 Handles loading datasets
 """
 
-def get_imagenette_loaders(arguments):
-    mean = [0.485, 0.456, 0.406]
-    std = [0.229, 0.224, 0.225]
 
+def get_imagenette_loaders(arguments, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
+    print("Using mean", mean)
     transformers = transforms.Compose(
         (
             [] if arguments['preload_all_data']
@@ -39,10 +38,8 @@ def get_imagenette_loaders(arguments):
     return load(arguments, test_set, train_set)
 
 
-def get_imagewoof_loaders(arguments):
-    mean = [0.485, 0.456, 0.406]
-    std = [0.229, 0.224, 0.225]
-
+def get_imagewoof_loaders(arguments, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
+    print("Using mean", mean)
     transformers = transforms.Compose(
         (
             [] if arguments['preload_all_data']
@@ -63,8 +60,9 @@ def get_imagewoof_loaders(arguments):
     return load(arguments, test_set, train_set)
 
 
-def get_mnist_loaders(arguments):
-    transformers = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+def get_mnist_loaders(arguments, mean=(0.5,), std=(0.5,)):
+    print("Using mean", mean)
+    transformers = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean, std)])
     train_set = datasets.MNIST(
         DATASET_PATH,
         train=True,
@@ -80,18 +78,29 @@ def get_mnist_loaders(arguments):
     return load(arguments, test_set, train_set)
 
 
-def get_fashionmnist_loaders(arguments):
-    if arguments['input_dim'] != [1, 28, 28]:
-        transformers = transforms.Compose([
-            transforms.Resize(arguments['input_dim'][1:]),
-            transforms.ToTensor(),
-            transforms.Lambda(lambda x: x.repeat(arguments['input_dim'][0], 1, 1)),
-            transforms.Normalize((0.2860, 0.2860, 0.2860), (0.3530, 0.3530, 0.3530))
-        ])
-    else:
-        transformers = transforms.Compose([transforms.ToTensor(),
-                                           transforms.Normalize((0.2860,), (0.3530,))
-                                           ])
+def get_unnormliazed_mnist_loaders(arguments, mean=(0.5,), std=(0.5,)):
+    print("Using mean", mean)
+    transformers = transforms.Compose([transforms.ToTensor()])
+    train_set = datasets.MNIST(
+        DATASET_PATH,
+        train=True,
+        download=True,
+        transform=transformers
+    )
+    test_set = datasets.MNIST(
+        DATASET_PATH,
+        train=False,
+        download=True,
+        transform=transformers
+    )
+    return load(arguments, test_set, train_set), mean, std
+
+
+def get_fashionmnist_loaders(arguments, mean=(0.5,), std=(0.5,)):
+    print("Using mean", mean)
+    transformers = transforms.Compose([transforms.ToTensor(),
+                                       transforms.Normalize(mean, std)
+                                       ])
     train_set = datasets.FashionMNIST(
         DATASET_PATH,
         train=True,
@@ -107,9 +116,30 @@ def get_fashionmnist_loaders(arguments):
     return load(arguments, test_set, train_set)
 
 
-def get_kmnist_loaders(arguments):
+def get_unnormalized_fashionmnist_loaders(arguments, mean=(0.5,), std=(0.5,)):
+    print("Using mean", mean)
+    transformers = transforms.Compose([transforms.ToTensor()
+                                       ])
+    train_set = datasets.FashionMNIST(
+        DATASET_PATH,
+        train=True,
+        download=True,
+        transform=transformers
+    )
+    test_set = datasets.FashionMNIST(
+        DATASET_PATH,
+        train=False,
+        download=True,
+        transform=transformers
+    )
+    return load(arguments, test_set, train_set), mean, std
+
+
+def get_kmnist_loaders(arguments, mean=(0.5,), std=(0.5,)):
+    print("Using mean", mean)
+    # (0.1918,), (0.3483,)
     transformers = transforms.Compose([transforms.ToTensor(),
-                                       transforms.Normalize((0.1918,), (0.3483,))
+                                       transforms.Normalize(mean, std)
                                        ])
     train_set = datasets.KMNIST(
         DATASET_PATH,
@@ -126,14 +156,16 @@ def get_kmnist_loaders(arguments):
     return load(arguments, test_set, train_set)
 
 
-def get_omniglot_loaders(arguments):
+def get_omniglot_loaders(arguments, mean=(0.5,), std=(0.5,)):
+    print("Using mean", mean)
+    # (0.92206,), (0.08426,)
     if arguments['preload_all_data']: raise NotImplementedError
 
     train_loader = torch.utils.data.DataLoader(
         datasets.Omniglot(DATASET_PATH, background=True, download=True,
                           transform=transforms.Compose([
                               transforms.ToTensor(),
-                              transforms.Normalize((0.92206,), (0.08426,))
+                              transforms.Normalize(mean, std)
                           ])),
         batch_size=arguments['batch_size'],
         shuffle=True,
@@ -145,7 +177,7 @@ def get_omniglot_loaders(arguments):
         datasets.Omniglot(DATASET_PATH, background=False, download=True,
                           transform=transforms.Compose([
                               transforms.ToTensor(),
-                              transforms.Normalize((0.92206,), (0.08426,))
+                              transforms.Normalize(mean, std)
                           ])),
         batch_size=arguments['batch_size'],
         shuffle=False,
@@ -156,15 +188,17 @@ def get_omniglot_loaders(arguments):
     return train_loader, test_loader
 
 
-def get_inverted_omniglot_loaders(arguments):
+def get_inverted_omniglot_loaders(arguments, mean=(0.5,), std=(0.5,)):
+    print("Using mean", mean)
+    # (1-0.92206,), (0.08426,)
     if arguments['preload_all_data']: raise NotImplementedError
 
     train_loader = torch.utils.data.DataLoader(
         datasets.Omniglot(DATASET_PATH, background=True, download=True,
                           transform=transforms.Compose([
                               transforms.ToTensor(),
-                              transforms.Lambda(lambda x: 1-x),
-                              transforms.Normalize((1-0.92206,), (0.08426,))
+                              transforms.Lambda(lambda x: 1 - x),
+                              transforms.Normalize((1 - mean), (1 - std))
                           ])),
         batch_size=arguments['batch_size'],
         shuffle=True,
@@ -177,7 +211,7 @@ def get_inverted_omniglot_loaders(arguments):
                           transform=transforms.Compose([
                               transforms.ToTensor(),
                               transforms.Lambda(lambda x: 1 - x),
-                              transforms.Normalize((1-0.92206,), (0.08426,))
+                              transforms.Normalize((1 - mean), (1 - std))
                           ])),
         batch_size=arguments['batch_size'],
         shuffle=False,
@@ -188,9 +222,8 @@ def get_inverted_omniglot_loaders(arguments):
     return train_loader, test_loader
 
 
-def get_cifar10_loaders(arguments):
-    mean = (0.4914, 0.4822, 0.4465)
-    std = (0.2471, 0.2435, 0.2616)
+def get_cifar10_loaders(arguments, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
+    print("Using mean", mean)
     transform = transforms.Compose(
         [
             transforms.RandomCrop(32, padding=4),
@@ -199,46 +232,77 @@ def get_cifar10_loaders(arguments):
             transforms.Normalize(mean, std),
         ]
     )
-    train_set = datasets.CIFAR10(DATASET_PATH, train=True, transform=transform)
+    train_set = datasets.CIFAR10(DATASET_PATH, train=True, transform=transform, download=True)
     transform = transforms.Compose(
         [
             transforms.ToTensor(),
             transforms.Normalize(mean, std),
         ]
     )
-    test_set = datasets.CIFAR10(root=DATASET_PATH, train=False, transform=transform)
+    test_set = datasets.CIFAR10(root=DATASET_PATH, train=False, transform=transform, download=True)
     return load(arguments, test_set, train_set)
 
 
-# def get_cifar10_loaders(arguments):
-#     mean = [0.485, 0.456, 0.406]  # avg 0.449
-#     std = [0.229, 0.224, 0.225]  # avg 0.226
-#     test_transforms = transforms.Compose(
-#         [
-#             transforms.ToTensor(),
-#             transforms.Normalize(mean=mean, std=std)
-#         ]
-#     )
-#     train_transforms = transforms.Compose(
-#         # (
-#         #     [] if arguments['preload_all_data']
-#         #     else [
-#         #         transforms.RandomHorizontalFlip(p=FLIP_CHANCE),
-#         #     ]
-#         # ) +
-#         [
-#             transforms.ToTensor(),
-#             transforms.Normalize(mean=mean, std=std)
-#         ]
-#     )
-#     train_set = datasets.CIFAR10(DATASET_PATH, train=True, download=True, transform=train_transforms)
-#     test_set = datasets.CIFAR10(DATASET_PATH, train=False, download=True, transform=test_transforms)
-#     return load(arguments, test_set, train_set)
+def get_unnormalized_cifar10_loaders(arguments, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
+    print("Using mean", mean)
+    transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+        ]
+    )
+    train_set = datasets.CIFAR10(DATASET_PATH, train=True, transform=transform, download=True)
+    test_set = datasets.CIFAR10(root=DATASET_PATH, train=False, transform=transform, download=True)
+    return load(arguments, test_set, train_set), mean, std
 
 
-def get_svhn_loaders(arguments):
+class MyData(Dataset):
+    def __init__(self, mean, std):
+        self.transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean, std)])
+        self.transformations = [None, transforms.RandomHorizontalFlip(p=1.0), transforms.RandomVerticalFlip(p=1.0),
+                                "rotation90", "rotation180", "rotation270"]
+        self.images = datasets.CIFAR10(DATASET_PATH, train=True, download=True)
+
+    def __getitem__(self, index):
+        image, y = self.images[index]
+        transformation = random.choice(self.transformations)
+        if transformation is not None:
+            if type(transformation) == str:
+                image = self.transform(image)
+                image = torch.rot90(image, 0, [1, 2])
+                if not transformation.endswith("90"):
+                    image = torch.rot90(image, 0, [1, 2])
+                    if transformation.endswith("270"):
+                        image = torch.rot90(image, 0, [1, 2])
+            else:
+                image = transformation(image)
+                image = self.transform(image)
+        else:
+            image = self.transform(image)
+
+        return image.to(torch.float32), torch.tensor(y, dtype=torch.int64)
+
+    def __len__(self):
+        return len(self.images)
+
+
+def get_custom_cifar10_loaders(arguments, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
+    print("Using mean", mean)
+    train_set = MyData(mean, std)
+    transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ]
+    )
+    test_set = datasets.CIFAR10(root=DATASET_PATH, train=False, transform=transform, download=True)
+    return load(arguments, test_set, train_set)
+
+
+def get_svhn_loaders(arguments, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
+    print("Using mean", mean)
+    # (0.4377, 0.4438, 0.4728), (0.1980, 0.2010, 0.1970)
     transformers = transforms.Compose([transforms.ToTensor(),
-                                       transforms.Normalize((0.4377, 0.4438, 0.4728), (0.1980, 0.2010, 0.1970))
+                                       transforms.Normalize(mean, std)
                                        ])
     train_set = datasets.SVHN(
         DATASET_PATH,
@@ -253,6 +317,26 @@ def get_svhn_loaders(arguments):
         transform=transformers
     )
     return load(arguments, test_set, train_set)
+
+
+def get_lsun_loaders(arguments, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
+    print("Using mean", mean)
+    transformers = transforms.Compose([
+        transforms.Resize(32),
+        transforms.CenterCrop(32),
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std)
+    ])
+    test_set = datasets.LSUN(root=DATASET_PATH, classes='test',
+                            transform=transformers)
+    test_loader = torch.utils.data.DataLoader(
+        test_set,
+        batch_size=arguments['batch_size'],
+        shuffle=False,
+        pin_memory=True,
+        num_workers=0
+    )
+    return None, test_loader
 
 
 def preloading(arguments, test_set, train_set):
@@ -293,19 +377,63 @@ def load(arguments, test_set, train_set):
     return train_loader, test_loader
 
 
-def get_cifar100_loaders(arguments):
-    if arguments['preload_all_data']: raise NotImplementedError
+def get_cifar100_loaders(arguments, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
 
-    mean = [0.5071, 0.4865, 0.4409]
-    std = [0.2673, 0.2564, 0.2762]
+    transform_train = transforms.Compose([
+        # transforms.ToPILImage(),
+        transforms.RandomCrop(32, padding=4),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(15),
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std)
+    ])
+    # train_loader = torch.utils.data.DataLoader(
+    #     datasets.CIFAR100(DATASET_PATH, train=True, download=True,
+    #                       transform=transforms.Compose([transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+    #                                                     transforms.RandomHorizontalFlip(),
+    #                                                     transforms.ToTensor(),
+    #                                                     transforms.Normalize(mean, std, inplace=True)])),
+    #     batch_size=arguments.batch_size,
+    #     shuffle=True,
+    #     pin_memory=True,
+    #     num_workers=NUM_WORKERS
+    # )
+
+    cifar100_training = torchvision.datasets.CIFAR100(root=DATASET_PATH, train=True, download=True,
+                                                      transform=transform_train)
+    train_loader = torch.utils.data.DataLoader(
+        cifar100_training, shuffle=True, num_workers=NUM_WORKERS, batch_size=arguments["batch_size"])
+
+    # test_loader = torch.utils.data.DataLoader(
+    #     datasets.CIFAR100(DATASET_PATH, train=False, download=True,
+    #                       transform=transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean, std)])),
+    #     batch_size=arguments.batch_size,
+    #     shuffle=True,
+    #     pin_memory=True,
+    #     num_workers=NUM_WORKERS
+    # )
+    transform_test = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std)
+    ])
+    # cifar100_test = CIFAR100Test(path, transform=transform_test)
+    cifar100_test = torchvision.datasets.CIFAR100(root=DATASET_PATH, train=False, download=True,
+                                                  transform=transform_test)
+    test_loader = torch.utils.data.DataLoader(
+        cifar100_test, shuffle=True, num_workers=NUM_WORKERS, batch_size=arguments["batch_size"])
+
+    return train_loader, test_loader
+
+
+def get_unnormalized_cifar100_loaders(arguments, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
+    print("Using mean", mean)
+    if arguments['preload_all_data']: raise NotImplementedError
     train_loader = torch.utils.data.DataLoader(
         datasets.CIFAR100(DATASET_PATH, train=True, download=True,
                           transform=transforms.Compose([
                               transforms.RandomHorizontalFlip(p=0.2),
                               transforms.RandomAffine(5),
                               transforms.ToTensor(),
-                              transforms.Normalize(mean=mean,
-                                                   std=std)
                           ])),
         batch_size=arguments['batch_size'],
         shuffle=True,
@@ -316,8 +444,6 @@ def get_cifar100_loaders(arguments):
     test_loader = torch.utils.data.DataLoader(
         datasets.CIFAR100(DATASET_PATH, train=False, download=True,
                           transform=transforms.Compose([transforms.ToTensor(),
-                                                        transforms.Normalize(mean=mean,
-                                                                             std=std)
 
                                                         ])),
         batch_size=arguments['batch_size'],
@@ -326,13 +452,13 @@ def get_cifar100_loaders(arguments):
         num_workers=NUM_WORKERS
     )
 
-    return train_loader, test_loader
+    return (train_loader, test_loader), mean, std
 
 
-def get_imagenet_loaders(arguments):
-    mean = [0.485, 0.456, 0.406]
-    std = [0.229, 0.224, 0.225]
-
+def get_imagenet_loaders(arguments, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
+    print("Using mean", mean)
+    # mean = [0.485, 0.456, 0.406]
+    # std = [0.229, 0.224, 0.225]
     transformers = transforms.Compose(
         (
             [] if arguments['preload_all_data']
@@ -418,30 +544,115 @@ def get_gaussian_noise_loaders(arguments=None):
     return train_loader, test_loader
 
 
-def get_oodomain_loaders(arguments=None):
-    bs = arguments['batch_size']
-    train_loader = torch.utils.data.DataLoader(
-        OODomain(arguments, train=True),
-        batch_size=bs,
-        shuffle=True,
-        pin_memory=True,
-        num_workers=NUM_WORKERS
+def change_range(x):
+    return x * 255
 
+
+def get_oodomain_loaders(arguments=None, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
+    print("In OOD domain loader")
+    transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Lambda(change_range),
+        ]
     )
 
-    test_loader = torch.utils.data.DataLoader(
-        OODomain(arguments, train=False),
-        batch_size=bs,
-        shuffle=False,
-        pin_memory=True,
-        num_workers=NUM_WORKERS
+    if (arguments["data_set"] == "CIFAR10") or (arguments["data_set"] == "CIFAR100"):
+        train_set = datasets.SVHN(
+            DATASET_PATH,
+            split='train',
+            download=True,
+            transform=transform
+        )
+        test_set = datasets.SVHN(
+            DATASET_PATH,
+            split='test',
+            download=True,
+            transform=transform
+        )
+    elif arguments["data_set"] == "FASHION":
+        train_set = datasets.MNIST(
+            DATASET_PATH,
+            train=True,
+            download=True,
+            transform=transform
+        )
+        test_set = datasets.MNIST(
+            DATASET_PATH,
+            train=False,
+            download=True,
+            transform=transform
+        )
+    else:
+        raise NotImplementedError(f"OODomain loader not implemented for {arguments['data_set']}")
+    return load(arguments, test_set, train_set)
+    # bs = arguments['batch_size']
+    # train_loader = torch.utils.data.DataLoader(
+    #     OODomain(arguments, train=True),
+    #     batch_size=bs,
+    #     shuffle=True,
+    #     pin_memory=True,
+    #     num_workers=NUM_WORKERS
+    #
+    # )
+    #
+    # test_loader = torch.utils.data.DataLoader(
+    #     OODomain(arguments, train=False),
+    #     batch_size=bs,
+    #     shuffle=False,
+    #     pin_memory=True,
+    #     num_workers=NUM_WORKERS
+    #
+    # )
 
-    )
-
-    return train_loader, test_loader
+    # return train_loader, test_loader
 
 
 #### Classes
+
+class CIFAR10C(Dataset):
+
+    def __init__(self, images, labels, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
+        self.mean = mean
+        self.std = std
+        self.images = images
+        self.labels = labels
+        self.transforms = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize(mean=self.mean, std=self.std)
+            ]
+        )
+
+    def __getitem__(self, item):
+        image = self.images[item] / 255
+        image = self.transforms(image.transpose((1, 2, 0)))
+        return image.to(torch.float32), torch.tensor(self.labels[item], dtype=torch.float32)
+
+    def __len__(self):
+        return len(self.images)
+
+class CIFAR10CU(Dataset):
+
+    def __init__(self, images, labels, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
+        self.mean = mean
+        self.std = std
+        self.images = images
+        self.labels = labels
+        self.transforms = transforms.Compose(
+            [
+                transforms.ToTensor(),
+            ]
+        )
+
+    def __getitem__(self, item):
+        image = self.images[item] / 255
+        image = self.transforms(image.transpose((1, 2, 0)))
+        return image.to(torch.float32), torch.tensor(self.labels[item], dtype=torch.float32)
+
+    def __len__(self):
+        return len(self.images)
+
 
 class RubbishSet(Dataset):
 
@@ -464,10 +675,10 @@ class GaussianNoise(Dataset):
         self.train = train
 
         if self.args['input_dim'] == [1, 28, 28] and self.args['output_dim'] == 10:
-            path = '/nfs/homedirs/ayle/guided-research/SNIP-it/gitignored/data/random_1x28x28x10'
+            path = '/nfs/students/ayle/guided-research/gitignored/data/random_1x28x28x10'
             self.reshape = [1, 1, 1]
         elif self.args['input_dim'] == [3, 32, 32] and self.args['output_dim'] == 10:
-            path = '/nfs/homedirs/ayle/guided-research/SNIP-it/gitignored/data/random_3x32x32x10'
+            path = '/nfs/students/ayle/guided-research/gitignored/data/random_3x32x32x10'
             self.reshape = [3, 1, 1]
         else:
             raise NotImplementedError

@@ -1,5 +1,4 @@
 import torch
-import torch.nn.functional as F
 import foolbox as fb
 from torch.distributions import Categorical
 
@@ -7,7 +6,30 @@ from models.trainers.DefaultTrainer import DefaultTrainer
 from utils.attacks_utils import construct_adversarial_examples
 from utils.model_utils import find_right_model
 from utils.constants import LOSS_DIR
+
+import argparse
+import pickle
+import sys
+import time
+
+import torch
+import torch.nn.functional as F
+from torch.optim.optimizer import Optimizer
+from torch.utils.data.dataloader import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 import numpy as np
+from torch.distributions import Categorical
+
+from models import GeneralModel
+from models.statistics import Metrics
+from models.statistics.Flops import FLOPCounter
+from models.statistics.Saliency import Saliency
+from utils.model_utils import find_right_model
+from utils.system_utils import *
+from utils.attacks_utils import construct_adversarial_examples
+from utils.metrics import calculate_aupr, calculate_auroc
+
+from utils.cka_utils import cka_batch
 
 
 class OODTrainer(DefaultTrainer):
@@ -22,6 +44,7 @@ class OODTrainer(DefaultTrainer):
             l0_reg=self._arguments['l0_reg'],
             hoyer_reg=self._arguments['hoyer_reg']
         )
+        self.add_kl = False
 
     def _batch_iteration_ood(self,
                          x: torch.Tensor,
@@ -82,7 +105,6 @@ class OODTrainer(DefaultTrainer):
         else:
             return loss.item(), time, entropy.detach().cpu(), preds.cpu()
 
-
     def _forward_pass_ood(self,
                       x: torch.Tensor,
                       y: torch.Tensor,
@@ -105,14 +127,14 @@ class OODTrainer(DefaultTrainer):
             weight_generator=self._model.parameters(),
             model=self._model,
             criterion=self._criterion,
-            ood_output=ood_out
+            ood_output=ood_out,
+            add_kl=self.add_kl
         )
         if return_acc:
             accuracy = self._get_accuracy(out, y)
             return accuracy, loss, out
         else:
             return loss, out
-
 
     def _epoch_iteration(self):
         """ implementation of an epoch """
@@ -143,7 +165,6 @@ class OODTrainer(DefaultTrainer):
             self._check_exit_conditions_epoch_iteration()
 
         self.out("\n")
-
 
     def validate(self):
         """ validates the model on test set """
@@ -191,3 +212,143 @@ class OODTrainer(DefaultTrainer):
 
         return float(np.mean(cum_acc)), float(np.mean(cum_loss)), cum_elapsed, float(np.mean(cum_entropy)), float(
             np.mean(ood_cum_entropy)), float(np.mean(success_rates)), ood_preds, ood_true
+
+    def train(self):
+        """ main training function """
+        from utils.constants import RESULTS_DIR
+
+        # setup data output directories:
+        setup_directories()
+        save_codebase_of_run(self._arguments)
+        DATA_MANAGER.write_to_file(
+            os.path.join(RESULTS_DIR, DATA_MANAGER.stamp, OUTPUT_DIR, "calling_command.txt"), str(" ".join(sys.argv)))
+
+        # data gathering
+        epoch = self._metrics._epoch
+
+        self._model.train()
+
+        try:
+
+            self.out(
+                f"{PRINTCOLOR_BOLD}Started training{PRINTCOLOR_END}"
+            )
+
+            if "Early" in self._arguments['prune_criterion']:
+                # for i in range(10):
+                # self._metrics.handle_weight_plotting(epoch, trainer_ns=self)
+                while self._stable == False:
+                    self.out("Network has not reached stable state")
+                    self.out(f"\n\n{PRINTCOLOR_BOLD}EPOCH {epoch} {PRINTCOLOR_END} \n\n")
+                    # do epoch
+                    self._epoch_iteration()
+
+                    # if calculate_aupr(self.ood_true, self.ood_preds) >= 0.78:
+                    #     self._stable = True
+
+                    if epoch == self._arguments['prune_to']:
+                        self._stable = True
+                        self.add_kl = False
+                    if epoch == 60:
+                        self.add_kl = True
+                    epoch += 1
+
+            if self._arguments['skip_first_plot']:
+                self._metrics.handle_weight_plotting(0, trainer_ns=self)
+
+            # if prune before training
+            if self._arguments['prune_criterion'] in SINGLE_SHOT:
+                self._criterion.prune(self._arguments['pruning_limit'],
+                                      train_loader=self._train_loader,
+                                      ood_loader=self._ood_prune_loader,
+                                      local=self._arguments['local_pruning'],
+                                      manager=DATA_MANAGER,)
+                if self._model.is_rewindable:
+                    self.out("rewinding weights to checkpoint...\n")
+                    self._model.do_rewind()
+                # If structured, probably needs to re-initialize optimizer with new architecture
+                if self._arguments['prune_criterion'] in STRUCTURED_SINGLE_SHOT:
+                    self._optimizer = find_right_model(OPTIMS, self._arguments['optimizer'],
+                                                       params=self._model.parameters(),
+                                                       lr=self._arguments['learning_rate'],
+                                                       weight_decay=self._arguments['l2_reg'])
+                    self._metrics.model_to_tensorboard(self._model, timestep=epoch)
+
+            if self._arguments['prune_criterion'] == 'RigL':
+                # TODO do random pruning
+                pass
+
+            # do training
+            for epoch in range(epoch, self._arguments['epochs'] + epoch):
+                self.out(f"\n\n{PRINTCOLOR_BOLD}EPOCH {epoch} {PRINTCOLOR_END} \n\n")
+
+                # do epoch
+                self._epoch_iteration()
+
+                # plotting
+                if (epoch % self._arguments['plot_weights_freq']) == 0 and self._arguments['plot_weights_freq'] > 0:
+                    self._metrics.handle_weight_plotting(epoch, trainer_ns=self)
+
+                # do all related to pruning
+                self._handle_pruning(epoch)
+
+                # save what needs to be saved
+                self._handle_backing_up(epoch)
+
+                if epoch == self._arguments['epochs'] - 1:
+                    self._model.zero_grad()
+                    self._model.eval()
+                    import copy
+                    self._test_model = copy.deepcopy(self._model)
+                    self._test_model.add_hooks()
+                    for batch_num, batch in enumerate(self._train_loader):
+                        self._test_model(batch[0].to(self._device))
+                        # break
+                    activations1 = []
+                    for value in self._test_model.hooks.values():
+                        activations1.append(value)
+
+                    self._test_model = copy.deepcopy(self._model)
+                    self._test_model.add_hooks()
+                    for batch_num, batch in enumerate(self._ood_loader):
+                        self._test_model(batch[0].to(self._device))
+                        # break
+                    activations2 = []
+                    for value in self._test_model.hooks.values():
+                        activations2.append(value)
+
+                    cka_distances = np.zeros(len(activations1))
+                    import math
+                    for j in range(len(activations1)):
+                        cka_distances[j] = cka_batch(activations1[j], activations2[j])
+                    for cka, layer_name in zip(cka_distances, self._model.mask.keys()):
+                        self._metrics.add(cka, key="cka/layer" + '_' + layer_name)
+                        print(layer_name, self._model.mask[layer_name].sum() / torch.numel(self._model.mask[layer_name]))
+                    self._metrics.add(np.mean(cka_distances), key="criterion/cka")
+                    self.cka_mean = np.mean(cka_distances)
+
+                    self._model.train()
+
+            if self._arguments['skip_first_plot']:
+                self._metrics.handle_weight_plotting(epoch + 1, trainer_ns=self)
+
+            # example last save
+            save_models([self._model, self._metrics], "finished")
+
+        except KeyboardInterrupt as e:
+            self.out(f"Killed by user: {e} at {time.time()}")
+            save_models([self._model, self._metrics], f"KILLED_at_epoch_{epoch}")
+            sys.stdout.flush()
+            DATA_MANAGER.write_to_file(
+                os.path.join(RESULTS_DIR, DATA_MANAGER.stamp, OUTPUT_DIR, "log.txt"), self._metrics.log)
+            self._writer.close()
+            exit(69)
+        except Exception as e:
+            self._writer.close()
+            report_error(e, self._model, epoch, self._metrics)
+
+        # flush prints
+        sys.stdout.flush()
+        DATA_MANAGER.write_to_file(
+            os.path.join(RESULTS_DIR, DATA_MANAGER.stamp, OUTPUT_DIR, "log.txt"), self._metrics.log)
+        self._writer.close()

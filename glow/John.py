@@ -214,7 +214,7 @@ class John(SNIP):
         net.zero_grad()
         weights = []
         for name, layer in net.named_modules():
-            if (isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear)) and ('prior' not in name):
+            if (name + ".weight") in net.mask:
                 weights.append(layer.weight)
         inputs_one = []
         targets_one = []
@@ -266,8 +266,8 @@ class John(SNIP):
             z = 0
             count = 0
             for name, layer in net.named_modules():
-                if (isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear)) and ('prior' not in name):
-                    z += (grad_w[count] * grad_f[count] * self.model.mask[name + ".weight"]).sum()
+                if (name + ".weight") in net.mask:
+                    z += (grad_w[count] * grad_f[count] * net.mask[name + ".weight"]).sum()
                     count += 1
             z.backward()
 

@@ -17,8 +17,13 @@ class SNIP(General):
     https://arxiv.org/abs/2006.00896
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, generative=False, img_size=28, nbins=2**5, channels=3, loss_f=None, *args, **kwargs):
         super(SNIP, self).__init__(*args, **kwargs)
+        self.generative = generative
+        self.img_size = img_size
+        self.nbins = nbins
+        self.channels = channels
+        self.loss_f = loss_f
 
     def get_prune_indices(self, *args, **kwargs):
         raise NotImplementedError
@@ -50,10 +55,18 @@ class SNIP(General):
             threshold, _ = torch.topk(all_scores, num_params_to_keep, sorted=True)
             acceptable_score = threshold[-1]
 
+        # p = 0.7
+
         # prune
+        # self.grads_abs = {}
         for name, grad in grads_abs.items():
 
             if local:
+                # percentage = p
+                # if p == 0.7:
+                #     p = 0.4
+                # elif p == 0.4:
+                #     p = 0.7
                 # don't prune more or less than possible
                 num_params_to_keep = int(len(torch.flatten(grad)) * (1 - percentage))
                 if num_params_to_keep < 1:
@@ -65,26 +78,29 @@ class SNIP(General):
                 threshold, _ = torch.topk(torch.flatten(grad), num_params_to_keep, sorted=True)
                 acceptable_score = threshold[-1]
 
-            print(self.model.mask[name].sum().item())
+            # print(self.model.mask[name].sum().item())
             self.model.mask[name] = ((grad / norm_factor) > acceptable_score).__and__(
                 self.model.mask[name].bool()).float().to(self.device)
+
+            # self.grads_abs[name] = self.model.mask[name] * (grad / norm_factor)
+            # self.grads_abs[name] = self.model.mask[name]
 
             # how much we wanna prune
             length_nonzero = float(self.model.mask[name].flatten().shape[0])
 
             cutoff = (self.model.mask[name] == 0).sum().item()
 
-            print("pruning", name, "percentage", cutoff / length_nonzero, "length_nonzero", length_nonzero)
+            # print("pruning", name, "percentage", cutoff / length_nonzero, "length_nonzero", length_nonzero)
 
         self.model.apply_weight_mask()
-        print("final percentage after snip:", self.model.pruned_percentage)
+        # print("final percentage after snip:", self.model.pruned_percentage)
         # self.cut_lonely_connections()
 
     def get_weight_saliencies(self, train_loader, ood_loader=None):
 
         net = self.model.eval()
 
-        iterations = SNIP_BATCH_ITERATIONS
+        iterations = 1
 
         # accumalate gradients of multiple batches
         net.zero_grad()
@@ -96,8 +112,13 @@ class SNIP(General):
             inputs = x.to(self.model.device)
             targets = y.to(self.model.device)
 
-            outputs = net.forward(inputs)
-            loss = F.nll_loss(outputs, targets) / iterations
+            if not self.generative:
+                outputs = net.forward(inputs)  # divide by temperature to make it uniform
+                loss = F.cross_entropy(outputs, targets)
+            else:
+                log_p, logdet, _ = net(inputs)
+                logdet = logdet.mean()
+                loss, _, _ = self.loss_f(log_p, logdet, self.img_size, self.nbins, channels=self.channels)
 
             loss.backward()
             loss_sum += loss.item()
@@ -113,6 +134,8 @@ class SNIP(General):
         norm_factor = 1
         log10 = all_scores.sort().values.log10()
         all_scores.div_(norm_factor)
+
+        self.grads_abs = grads_abs
 
         self.model = self.model.train()
 

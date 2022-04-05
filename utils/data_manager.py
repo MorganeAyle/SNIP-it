@@ -102,8 +102,8 @@ class DataManager:
     def set_date_stamp(self, addition=""):
         """ generates printable date stamp"""
 
-        if (len(self.stamp) > 2):
-            raise Exception("Attempting to reset datestamp, but it was already set")
+        # if (len(self.stamp) > 2):
+        #     raise Exception("Attempting to reset datestamp, but it was already set")
 
         self.actual_date = datetime.now()
         self.stamp = str(self.actual_date).split(".")[0].replace(" ", "_").replace(':', '.') + addition

@@ -1,23 +1,14 @@
-import torch
 from models.Pruneable import Pruneable
 from models.networks.assisting_layers.ResNetLayers import resnet50
 
 
 class ResNet50(Pruneable):
-    def __init__(self, device="cuda", output_dim=2, input_dim=(1, 1, 1), **kwargs):
+    def __init__(self, device="cuda", output_dim=100, input_dim=(1, 1, 1), **kwargs):
         super(ResNet50, self).__init__(device=device, output_dim=output_dim, input_dim=input_dim, **kwargs)
-        self.m = resnet50()
+        print(output_dim)
+        self.m = resnet50(output_dim)
 
     def forward(self, x):
         x = self.m(x)
         return x
 
-
-if __name__ == '__main__':
-    device = "cuda"
-    mnist = torch.randn((21, 1, 28, 28)).to(device)
-    cifar = torch.randn((21, 3, 32, 32)).to(device)
-    imagenet = torch.randn((2, 4, 244, 244)).to(device)
-    for test_batch in [mnist, cifar, imagenet]:
-        conv = ResNet50(output_dim=10, input_dim=test_batch.shape[1:], device=device)
-        print(conv.forward(test_batch).shape)

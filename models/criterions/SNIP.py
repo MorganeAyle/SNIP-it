@@ -3,6 +3,8 @@ import os
 import torch
 import torch.nn.functional as F
 
+from tqdm import tqdm
+
 from models.criterions.General import General
 from utils.constants import RESULTS_DIR, OUTPUT_DIR, SNIP_BATCH_ITERATIONS
 from utils.attacks_utils import construct_adversarial_examples
@@ -26,7 +28,9 @@ class SNIP(General):
     def get_grow_indices(self, *args, **kwargs):
         raise NotImplementedError
 
-    def prune(self, percentage, train_loader=None, manager=None, ood_loader=None, local=False, **kwargs):
+    def prune(self, percentage, train_loader=None, manager=None, ood_loader=None, local=False, iterations=5, **kwargs):
+
+        self.iterations = iterations
 
         all_scores, grads_abs, log10, norm_factor = self.get_weight_saliencies(train_loader, ood_loader)
 
@@ -35,10 +39,10 @@ class SNIP(General):
     def handle_pruning(self, all_scores, grads_abs, log10, manager, norm_factor, percentage, local):
         from utils.constants import RESULTS_DIR
         if manager is not None:
-            manager.save_python_obj(all_scores.cpu().numpy(),
+            manager.save_python_obj(all_scores.cpu().detach().numpy(),
                                     os.path.join(RESULTS_DIR, manager.stamp, OUTPUT_DIR, f"scores"))
 
-        print(local)
+        # print(local)
 
         if not local:
             # don't prune more or less than possible
@@ -67,7 +71,7 @@ class SNIP(General):
                 threshold, _ = torch.topk(torch.flatten(grad), num_params_to_keep, sorted=True)
                 acceptable_score = threshold[-1]
 
-            print(self.model.mask[name].sum().item())
+            # print(self.model.mask[name].sum().item())
             self.model.mask[name] = ((grad / norm_factor) > acceptable_score).__and__(
                 self.model.mask[name].bool()).float().to(self.device)
 
@@ -76,16 +80,16 @@ class SNIP(General):
 
             cutoff = (self.model.mask[name] == 0).sum().item()
 
-            print("pruning", name, "percentage", cutoff / length_nonzero, "length_nonzero", length_nonzero)
+            # print("pruning", name, "percentage", cutoff / length_nonzero, "length_nonzero", length_nonzero)
         self.model.apply_weight_mask()
-        print("final percentage after snip:", self.model.pruned_percentage)
+        # print("final percentage after snip:", self.model.pruned_percentage)
         # self.cut_lonely_connections()
 
     def get_weight_saliencies(self, train_loader, ood_loader=None):
 
         net = self.model.eval()
 
-        iterations = SNIP_BATCH_ITERATIONS
+        iterations = self.iterations
 
         # accumalate gradients of multiple batches
         net.zero_grad()
@@ -98,13 +102,19 @@ class SNIP(General):
             targets = y.to(self.model.device)
 
             outputs = net.forward(inputs)
+
             loss = F.nll_loss(outputs, targets) / iterations
 
             loss.backward()
             loss_sum += loss.item()
 
+            # import torchvision
+            # torchvision.utils.save_image(x, '/nfs/homedirs/ayle/guided-research/SNIP-it/gitignored/test.png',
+                                         # normalize=True)
+
         # get elasticities
         grads_abs = {}
+        self.grads_abs = {}
         for name, layer in net.named_modules():
             if "Norm" in str(layer): continue
             if name + ".weight" in self.model.mask:

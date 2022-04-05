@@ -6,7 +6,7 @@ def get_attack(method_name):
 
     att = fb.attacks
 
-    print("> PERFORMING ADV ATTACK", method_name)
+    # print("> PERFORMING ADV ATTACK", method_name)
 
     switcher = {
         "CarliniWagner": att.L2CarliniWagnerAttack,

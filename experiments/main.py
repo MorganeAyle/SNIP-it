@@ -15,9 +15,8 @@ from utils.model_utils import *
 from utils.system_utils import *
 
 import torch
-from torch.utils.data.dataset import Dataset
 
-from torchvision import transforms
+from copy import deepcopy
 
 from lipEstimation.lipschitz_utils import compute_module_input_sizes
 from lipEstimation.lipschitz_approximations import lipschitz_spectral_ub
@@ -90,19 +89,25 @@ def main(
     # load data
     train_loader, test_loader = find_right_model(
         DATASETS, arguments['data_set'],
-        arguments=arguments
+        arguments=arguments,
+        mean=arguments['mean'],
+        std=arguments['std']
     )
 
     # load OOD data
     _, ood_loader = find_right_model(
         DATASETS, arguments['ood_data_set'],
-        arguments=arguments
+        arguments=arguments,
+        mean=arguments['mean'],
+        std=arguments['std']
     )
 
     # load OOD prune data
-    _, ood_prune_loader = find_right_model(
+    ood_prune_loader, _ = find_right_model(
         DATASETS, arguments['ood_prune_data_set'],
-        arguments=arguments
+        arguments=arguments,
+        mean=arguments['mean'],
+        std=arguments['std']
     )
 
     # get loss function
@@ -120,13 +125,12 @@ def main(
         OPTIMS, arguments['optimizer'],
         params=model.parameters(),
         lr=arguments['learning_rate'],
+        # momentum=arguments['momentum'],
         weight_decay=arguments['l2_reg'] if not arguments['l0'] else 0
     )
 
     run_name = f'_model={arguments["model"]}_dataset={arguments["data_set"]}_prune-criterion={arguments["prune_criterion"]}' + \
-               f'_pruning-limit={arguments["pruning_limit"]}_prune-freq={arguments["prune_freq"]}_prune-delay={arguments["prune_delay"]}' + \
-               f'_outer-layer-pruning={arguments["outer_layer_pruning"]}_prune-to={arguments["prune_to"]}' + \
-               f'_rewind-to={arguments["rewind_to"]}_train-scheme={arguments["train_scheme"]}_seed={arguments["seed"]}'
+               f'_pruning-limit={arguments["pruning_limit"]}_train-scheme={arguments["train_scheme"]}_seed={arguments["seed"]}'
 
     # build trainer
     trainer = find_right_model(
@@ -149,96 +153,104 @@ def main(
 
     out(f"finishing at {get_date_stamp()}")
 
-    results = {'train_acc': trainer.train_acc, 'test_acc': trainer.test_acc, 'sparsity': trainer.sparsity,
-               'filename': DATA_MANAGER.stamp, 'cka': trainer.cka_mean}
+    model = trainer._model.eval()
 
-    trainer._model.eval()
+    results = {'filename': DATA_MANAGER.stamp}
+
+    if arguments['get_hooks']:
+        results['cka'] = trainer.cka_mean
+    if trainer.train_acc is not None:
+        results['train_acc'] = trainer.train_acc
+    if trainer.sparsity is not None:
+        results['sparsity'] = trainer.sparsity
 
     out("EVALUATING...")
 
+    # In-distribution evaluation
+    in_tester = find_right_model(
+        TESTERS_DIR, 'InEvaluation',
+        test_loader=test_loader,
+        device=device,
+        model=model
+    )
+    in_res, true_labels, all_preds, entropies = in_tester.evaluate()
+    for key, value in in_res.items():
+        results[key] = value
+
+    print(results)
+
+    # Adversarial evaluation
     for attack in arguments['eval_attacks']:
         for epsilon in arguments['eval_epsilons']:
             out("Attack {}".format(attack))
+
+            # load data
+            (_, un_test_loader), mean, std = find_right_model(
+                DATASETS, arguments['data_set'] + '_unnormalized',
+                arguments=arguments,
+                mean=arguments['mean'],
+                std=arguments['std']
+            )
             # build tester
             tester = find_right_model(
                 TESTERS_DIR, 'AdversarialEvaluation',
                 attack=attack,
-                model=trainer._model,
+                model=model,
                 device=device,
-                arguments=None,
-                test_loader=test_loader,
+                test_loader=un_test_loader,
+                mean=mean,
+                std=std
             )
 
             out("Epsilon {}".format(str(epsilon)))
-            res = tester.evaluate(epsilon=epsilon)
+            res = tester.evaluate(epsilon=epsilon, true_labels=deepcopy(true_labels), all_preds=deepcopy(all_preds),
+                                  entropies=deepcopy(entropies))
 
             for key, value in res.items():
                 results[key] = value
 
+    # OOD Evaluation
     with torch.no_grad():
         for ood_data_set in arguments['eval_ood_data_sets']:
             out("OOD Dataset: {}".format(ood_data_set))
-            # load data
-            _, test_loader = find_right_model(
-                DATASETS, arguments['data_set'],
-                arguments=arguments
-            )
 
             # load OOD data
             _, ood_loader = find_right_model(
                 DATASETS, ood_data_set,
-                arguments=arguments
+                arguments=arguments,
+                mean=arguments['mean'],
+                std=arguments['std']
             )
             # build tester
             tester = find_right_model(
                 TESTERS_DIR, 'OODEvaluation',
-                model=trainer._model,
+                model=model,
                 device=device,
-                arguments=None,
-                test_loader=test_loader,
                 ood_loader=ood_loader,
                 ood_dataset=ood_data_set
             )
-            res = tester.evaluate()
+            res = tester.evaluate(true_labels=deepcopy(true_labels), all_preds=deepcopy(all_preds),
+                                  entropies=deepcopy(entropies))
 
             for key, value in res.items():
                 results[key] = value
 
-    class DS(Dataset):
-
-        def __init__(self, images, labels):
-            self.images = images
-            self.labels = labels
-            self.mean = [0.4914, 0.4822, 0.4465]
-            self.std = [0.2471, 0.2435, 0.2616]
-            self.transforms = transforms.Compose(
-                [
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean=self.mean, std=self.std)
-                ]
-            )
-
-        def __getitem__(self, item):
-            image = self.images[item] / 255
-            image = self.transforms(image.transpose((1, 2, 0)))
-            return image.to(torch.float32), torch.tensor(self.labels[item], dtype=torch.float32)
-
-        def __len__(self):
-            return len(self.images)
-
+    # DS Evaluation
     with torch.no_grad():
-        if arguments["data_set"] == "CIFAR10":
-            avg_acc = np.zeros(5)
-            avg_entropy = np.zeros(5)
-            avg_auroc = np.zeros(5)
-            avg_aupr = np.zeros(5)
-            avg_auroc_ent = np.zeros(5)
-            avg_aupr_ent = np.zeros(5)
-            ds_path = os.path.join(DATASET_PATH, "cifar10_corrupted")
-            for ds_dataset_name in os.listdir(ds_path):
-                npz_dataset = np.load(os.path.join(ds_path, ds_dataset_name))
+        if "CIFAR10" in arguments["data_set"]:
+            avg_acc = [[] for _ in range(5)]
+            avg_entropy = [[] for _ in range(5)]
+            avg_auroc = [[] for _ in range(5)]
+            avg_aupr = [[] for _ in range(5)]
+            avg_auroc_ent = [[] for _ in range(5)]
+            avg_aupr_ent = [[] for _ in range(5)]
 
-                ds_dataset = DS(npz_dataset["images"], npz_dataset["labels"])
+            ds_path = os.path.join(DATASET_PATH, "cifar10_corrupted")
+
+            for ds_dataset_name in os.listdir(ds_path):
+                # Get corruption loader
+                npz_dataset = np.load(os.path.join(ds_path, ds_dataset_name))
+                ds_dataset = CIFAR10C(npz_dataset["images"], npz_dataset["labels"], arguments["mean"], arguments["std"])
                 ds_loader = torch.utils.data.DataLoader(
                     ds_dataset,
                     batch_size=arguments['batch_size'],
@@ -250,37 +262,38 @@ def main(
                 # build tester
                 tester = find_right_model(
                     TESTERS_DIR, 'DSEvaluation',
-                    model=trainer._model,
+                    model=model,
                     device=device,
-                    arguments=None,
-                    test_loader=test_loader,
                     ds_loader=ds_loader,
                     ds_dataset=ds_dataset_name.split('.')[0]
                 )
-                res = tester.evaluate()
+                res = tester.evaluate(true_labels=deepcopy(true_labels), all_preds=deepcopy(all_preds),
+                                      entropies=deepcopy(entropies))
 
                 severity = int(ds_dataset_name.split('.')[0].split('_')[-1]) - 1
                 for key, value in res.items():
                     if key.startswith('acc'):
-                        avg_acc[severity] += value
+                        avg_acc[severity].append(value)
                     elif key.startswith('auroc_entropy'):
-                        avg_auroc_ent[severity] += value
+                        avg_auroc_ent[severity].append(value)
                     elif key.startswith('aupr_entropy'):
-                        avg_aupr_ent[severity] += value
+                        avg_aupr_ent[severity].append(value)
                     elif key.startswith('auroc'):
-                        avg_auroc[severity] += value
+                        avg_auroc[severity].append(value)
                     elif key.startswith('aupr'):
-                        avg_aupr[severity] += value
+                        avg_aupr[severity].append(value)
                     elif key.startswith('entropy_'):
-                        avg_entropy[severity] += value
+                        avg_entropy[severity].append(value)
 
                     results[key] = value
-            avg_acc = avg_acc / 15
-            avg_auroc_ent = avg_auroc_ent / 15
-            avg_aupr_ent = avg_aupr_ent / 15
-            avg_auroc = avg_auroc / 15
-            avg_aupr = avg_aupr / 15
-            avg_entropy = avg_entropy / 15
+
+            avg_acc = [np.mean(acc) for acc in avg_acc]
+            avg_auroc_ent = [np.mean(auroc_ent) for auroc_ent in avg_auroc_ent]
+            avg_aupr_ent = [np.mean(aupr_ent) for aupr_ent in avg_aupr_ent]
+            avg_auroc = [np.mean(auroc) for auroc in avg_auroc]
+            avg_aupr = [np.mean(aupr) for aupr in avg_aupr]
+            avg_entropy = [np.mean(entropy) for entropy in avg_entropy]
+
             for i in range(len(avg_acc)):
                 name = 'avg_acc_' + str(i + 1)
                 results[name] = avg_acc[i]
@@ -300,6 +313,14 @@ def main(
                 name = 'avg_entropy_' + str(i + 1)
                 results[name] = avg_entropy[i]
 
+            results['avg_acc_cifar10c'] = np.mean(avg_acc)
+            results['avg_auroc_ent_cifar10c'] = np.mean(avg_auroc_ent)
+            results['avg_aupr_ent_cifar10c'] = np.mean(avg_aupr_ent)
+            results['avg_auroc_cifar10c'] = np.mean(avg_auroc)
+            results['avg_aupr_cifar10c'] = np.mean(avg_aupr)
+            results['avg_entropy_cifar10c'] = np.mean(avg_entropy)
+
+    # Compute Lipschitz constant
     # Don't compute gradient for the projector: speedup computations
     for p in model.parameters():
         p.requires_grad = False
@@ -309,8 +330,8 @@ def main(
         input_size = torch.unsqueeze(img[0], 0).size()
         break
     compute_module_input_sizes(model, input_size)
-    lip_spec = lipschitz_spectral_ub(model).data[0]
-    results['lip_spec'] = lip_spec
+    lip_spec = lipschitz_spectral_ub(model.cpu()).data[0]
+    results['lip_spec'] = lip_spec.cpu().numpy()
 
     return results
 
@@ -320,9 +341,9 @@ def assert_compatibilities(arguments):
     check_incompatible_props([arguments['train_scheme'] != "L0Trainer", arguments['l0']], "l0", arguments['train_scheme'])
     check_incompatible_props([arguments['l0'], arguments['group_hoyer_square'], arguments['hoyer_square']],
                              "Choose one mode, not multiple")
-    check_incompatible_props(
-        ["Structured" in arguments['prune_criterion'], "Group" in arguments['prune_criterion'], "ResNet" in arguments['model']],
-        "structured", "residual connections")
+    # check_incompatible_props(
+    #     ["Structured" in arguments['prune_criterion'], "Group" in arguments['prune_criterion'], "ResNet" in arguments['model']],
+    #     "structured", "residual connections")
     # todo: add more
 
 
@@ -364,6 +385,11 @@ def config():
 
 @ex.automain
 def run(arguments):
+    if arguments['data_set'] not in ['CIFAR10', 'MNIST', 'FASHION', 'custom_CIFAR10', "CIFAR100"]:
+        raise NotImplementedError(f'Unnormalized loading not implemented for dataset {arguments["data_set"]}')
+    if arguments['data_set'] not in ['CIFAR10', 'FASHION', "CIFAR100"]:
+        raise NotImplementedError(f"OODomain loader not implemented for {arguments['data_set']}")
+
     set_results_dir(arguments["results_dir"])
     metrics = Metrics()
     out = metrics.log_line

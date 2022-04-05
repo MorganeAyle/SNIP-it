@@ -16,7 +16,7 @@ class CrossEntropyKL(GeneralModel):
         self.loss = nn.CrossEntropyLoss()
         self.ood_loss = nn.KLDivLoss(reduction='batchmean')
 
-    def forward(self, output=None, target=None, weight_generator=None, ood_output=None, **kwargs):
+    def forward(self, output=None, target=None, weight_generator=None, ood_output=None, add_kl=False, **kwargs):
         regularisation = torch.zeros([1]).to(self.device)
         if self._do_l1 or self._do_lp:
             for param in weight_generator:
@@ -25,7 +25,10 @@ class CrossEntropyKL(GeneralModel):
                 if self._do_lp:
                     regularisation += self.lp_reg.__mul__(torch.norm((param + 1e-8), p=0.2))
 
-        return self.loss.forward(output, target) + 0.5*self.ood_loss.forward(torch.log(F.softmax(ood_output, -1)), torch.ones_like(ood_output).float()/10) + regularisation
+        if add_kl:
+            return self.loss.forward(output, target) + 0.5*self.ood_loss.forward(torch.log(F.softmax(ood_output, -1)), torch.ones_like(ood_output).float()/10) + regularisation
+        else:
+            return self.loss.forward(output, target)
 
     @property
     def _do_l1(self):
